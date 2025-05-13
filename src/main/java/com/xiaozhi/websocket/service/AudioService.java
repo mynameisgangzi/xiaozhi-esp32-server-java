@@ -135,14 +135,17 @@ public class AudioService {
         String sessionId = session.getId();
 
         // 标记开始播放
+        logger.info("标记开始播放");
         isPlaying.computeIfAbsent(sessionId, k -> new AtomicBoolean()).set(true);
 
         if (isFirst) {
+            logger.info("发送TTS开始消息");
             sendStart(session);
         }
 
         if (audioPath == null) {
             // 如果没有音频路径但是结束消息，发送结束标记
+            logger.info("没有音频路径但是结束消息，发送结束标记");
             if (isLast) {
                 return sendStop(session);
             }
@@ -162,12 +165,14 @@ public class AudioService {
                     List<byte[]> opusFrames;
 
                     if (audioPath.contains(".opus")) {
+                        logger.info("音频文件是opus文件，直接读取opus帧数据");
                         // 如果是opus文件，直接读取opus帧数据
                         opusFrames = opusProcessor.readOpus(audioFile);
                     } else {
                         // 如果不是opus文件，按照原来的逻辑处理
                         byte[] audioData = AudioUtils.readAsPcm(fullPath);
                         // 将PCM转换为Opus帧
+                        logger.info("不是opus文件，将PCM转换为Opus帧");
                         opusFrames = opusProcessor.pcmToOpus(
                                 session.getId(), audioData);
                     }
@@ -202,6 +207,7 @@ public class AudioService {
                             })
                             // 完成后发送结束消息
                             .then(Mono.fromRunnable(() -> {
+                                logger.info("音频播放完成，设置播放状态为false");
                                 isPlaying.get(sessionId).set(false);
                             }))
                             .then(isLast ? sendStop(session) : Mono.empty());

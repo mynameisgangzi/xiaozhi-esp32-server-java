@@ -79,6 +79,7 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         if (deviceIdAuth == null) {
             URI uri = session.getHandshakeInfo().getUri();
             String query = uri.getQuery();
+            logger.info("query: {}", query);
             if (query != null) {
                 for (String key : deviceKeys) {
                     String paramPattern = key + "=";
@@ -138,8 +139,10 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
                         session.receive()
                                 .flatMap(message -> {
                                     if (message.getType() == WebSocketMessage.Type.TEXT) {
+                                        logger.info("收到文本消息 - SessionId: {}, Message: {}", sessionId, message.getPayloadAsText());
                                         return handleTextMessage(session, message);
                                     } else if (message.getType() == WebSocketMessage.Type.BINARY) {
+                                        
                                         return handleBinaryMessage(session, message);
                                     }
                                     return Mono.empty();
@@ -207,7 +210,7 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
             if ("hello".equals(messageType)) {
                 return handleHelloMessage(session, jsonNode);
             }
-
+            
             // 对于其他消息类型，检查设备是否已绑定，但避免重复查询
             if (device == null || device.getModelId() == null) {
                 // 只有在必要时才查询数据库
@@ -269,7 +272,7 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         byte[] opusData = new byte[retainedBuffer.readableByteCount()];
         retainedBuffer.read(opusData);
         DataBufferUtils.release(retainedBuffer);
-
+        
         // 委托给DialogueService处理音频数据
         return dialogueService.processAudioData(session, opusData);
     }

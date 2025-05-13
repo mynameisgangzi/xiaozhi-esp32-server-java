@@ -76,6 +76,19 @@ public class SysDevice extends SysRole {
      */
     private String functionNames;
 
+    /**
+     * 学生账号
+     */
+    private String studentAccount;
+
+    /**
+     * get set
+     */
+    public String getStudentAccount() {
+        return studentAccount;
+    }
+    
+    
 
     public Integer getModelId() {
         return modelId;

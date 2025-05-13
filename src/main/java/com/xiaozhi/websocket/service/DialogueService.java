@@ -26,7 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.text.DecimalFormat;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
-
+import com.xiaozhi.service.ReviewService;
+import com.xiaozhi.websocket.service.SentenceAudioService;
 /**
  * 对话处理服务
  * 负责处理语音识别和对话生成的业务逻辑
@@ -57,6 +58,15 @@ public class DialogueService {
 
     @Autowired
     private SessionManager sessionManager;
+
+    @Autowired
+    private ReviewService reviewService;
+
+    @Autowired
+    private ReviewDialogueService reviewDialogueService;
+    
+    @Autowired
+    private SentenceAudioService sentenceAudioService;
 
     // 会话状态管理
     private final Map<String, AtomicInteger> seqCounters = new ConcurrentHashMap<>();
@@ -146,11 +156,12 @@ public class DialogueService {
 
         // 如果设备未注册或不在监听状态，忽略音频数据
         if (device == null || !sessionManager.isListening(sessionId)) {
+            logger.info("设备未注册或不在监听状态，忽略音频数据");
             return Mono.empty();
         }
 
-        SysConfig sttConfig = null;
-        SysConfig ttsConfig = null;
+        SysConfig sttConfig = null;//语音识别配置
+        SysConfig ttsConfig = null;//语音合成配置
 
         if (device.getSttId() != null) {
             sttConfig = sessionManager.getCachedConfig(device.getSttId());
@@ -162,28 +173,34 @@ public class DialogueService {
 
         final SysConfig finalSttConfig = sttConfig;
         final SysConfig finalTtsConfig = ttsConfig;
-
+        //logger.info("处理音频数据，vadService.processAudio(sessionId, opusData)");
         return Mono.fromCallable(() -> vadService.processAudio(sessionId, opusData))
                 .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(vadResult -> {
+                    if(vadResult.getProcessedData() == null){
+                        return Mono.empty();
+                    }
                     // 如果VAD处理出错，直接返回
-                    if (vadResult.getStatus() == VadStatus.ERROR || vadResult.getProcessedData() == null) {
+                    if (vadResult.getStatus() == VadStatus.ERROR ) {
+                        logger.error("VAD处理出错，直接返回");
                         return Mono.empty();
                     }
 
                     // 检测到语音
                     sessionManager.updateLastActivity(sessionId);
-
+                    //logger.info("VAD处理完成，根据VAD状态处理");
                     // 根据VAD状态处理
                     switch (vadResult.getStatus()) {
                         case SPEECH_START:
                             // 检测到语音开始
                             sttStartTimes.put(sessionId, System.currentTimeMillis());
+                            //logger.info("检测到语音开始，开始语音识别");
                             return startStt(session, sessionId, finalSttConfig, finalTtsConfig,
                                     device, vadResult.getProcessedData());
 
                         case SPEECH_CONTINUE:
                             // 语音继续，发送数据到流式识别
+                            //logger.info("检测到语音继续，发送数据到流式识别");
                             if (sessionManager.isStreaming(sessionId)) {
                                 Sinks.Many<byte[]> audioSink = sessionManager.getAudioSink(sessionId);
                                 if (audioSink != null) {
@@ -199,6 +216,20 @@ public class DialogueService {
                                 if (audioSink != null) {
                                     audioSink.tryEmitComplete();
                                     sessionManager.setStreamingState(sessionId, false);
+                                    
+                                    // 在复习模式下，处理用户的语音输入
+                                    // if (reviewDialogueService.isInReviewMode(sessionId)) {
+                                    //     // 设置为非监听状态，防止处理自己的声音
+                                    //     logger.info("进入复习模式处理，设置为非监听状态");
+                                    //     sessionManager.setListeningState(sessionId, false);
+                                    //     // 处理用户的语音输入，发送音频消息
+                                    //     return reviewDialogueService.processReviewAudio(session, vadResult.getProcessedData())
+                                    //         .doFinally(signal -> {
+                                    //             // 确保在音频完全发送后再恢复监听状态
+                                    //             logger.info("复习模式处理完成，恢复监听状态");
+                                    //             sessionManager.setListeningState(sessionId, true);
+                                    //         });
+                                    // }
                                 }
                             }
                             return Mono.empty();
@@ -254,8 +285,7 @@ public class DialogueService {
                     if (!StringUtils.hasText(finalText)) {
                         return Mono.empty();
                     }
-
-                    // 初始化对话状态
+                    
                     initChat(sessionId);
 
                     // 设置会话为非监听状态，防止处理自己的声音
@@ -265,10 +295,32 @@ public class DialogueService {
                     return messageService.sendMessage(session, "stt", "final", finalText)
                             .then(audioService.sendStart(session)) // 立即发送TTS开始状态
                             .then(Mono.fromRunnable(() -> {
+                                // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
+                                // 先检查是否已经在复习模式中
+                                if (reviewDialogueService.isInReviewMode(sessionId)) {
+                                    logger.info("用户已在复习模式中，发送下一个单词");
+                                    // 异步处理下一个单词，避免阻塞当前线程
+                                    CompletableFuture.runAsync(() -> {
+                                        reviewDialogueService.processNextWord(session)
+                                            .subscribe();
+                                    });
+                                    return; // 不再执行后续的大模型调用
+                                }
+                                // 判断是否需要进入复习模式
+                                if (reviewDialogueService.containsLearningIntent(finalText)) {
+                                    logger.info("检测到学习意图，启动复习模式而不是调用大模型");
+                                    // 异步启动复习模式，避免阻塞当前线程
+                                    CompletableFuture.runAsync(() -> {
+                                        reviewDialogueService.tryEnterReviewMode(session,sessionId, finalText, device,ttsConfig)
+                                            .subscribe();
+                                    });
+                                    return; // 不再执行后续的大模型调用
+                                }
                                 // 使用句子切分处理响应
                                 llmManager.chatStreamBySentence(device, finalText,
                                         (sentence, isFirst, isLast) -> {
-                                            handleSentence(
+                                            // 使用SentenceAudioService处理句子
+                                            sentenceAudioService.handleSentence(
                                                     session,
                                                     sessionId,
                                                     sentence,
@@ -276,8 +328,15 @@ public class DialogueService {
                                                     isLast,
                                                     finalTtsConfig,
                                                     device.getVoiceName());
+                                            
+                                            // 累加完整回复内容
+                                            if (sentence != null && !sentence.isEmpty()) {
+                                                responses.get(sessionId).append(sentence);
+                                            }
                                         });
                             }));
+                    // 检查是否包含学习意图，如果有则进入复习模式
+                    
                 })
                 .onErrorResume(error -> {
                     logger.error("流式识别错误: {}", error.getMessage(), error);
@@ -297,6 +356,8 @@ public class DialogueService {
         seqCounters.putIfAbsent(sessionId, new AtomicInteger(0));
         sentenceQueue.putIfAbsent(sessionId, new CopyOnWriteArrayList<>());
         locks.putIfAbsent(sessionId, new ReentrantLock());
+        // 初始化SentenceAudioService会话
+        sentenceAudioService.initSession(sessionId);
     }
 
     /**
@@ -507,7 +568,8 @@ public class DialogueService {
                     // 使用句子切分处理响应
                     llmManager.chatStreamBySentence(device, text,
                             (sentence, isFirst, isLast) -> {
-                                handleSentence(
+                                // 使用SentenceAudioService处理句子
+                                sentenceAudioService.handleSentence(
                                         session,
                                         sessionId,
                                         sentence,
@@ -515,6 +577,11 @@ public class DialogueService {
                                         isLast,
                                         ttsConfig,
                                         device.getVoiceName());
+                                
+                                // 累加完整回复内容
+                                if (sentence != null && !sentence.isEmpty()) {
+                                    responses.get(sessionId).append(sentence);
+                                }
                             });
                 }).then());
     }
@@ -553,8 +620,22 @@ public class DialogueService {
         responses.remove(sessionId);
         sentenceQueue.remove(sessionId);
         locks.remove(sessionId);
+        
+        // 清理SentenceAudioService中的资源
+        sentenceAudioService.cleanupSession(sessionId);
 
         // 清理AudioService中的资源
         audioService.cleanupSession(sessionId);
+        
+        // 清理复习模式资源
+        reviewDialogueService.cleanupSession(sessionId);
+        logger.info("清理会话资源 - SessionId: {}", sessionId);
+    }
+
+    /**
+     * 退出复习模式
+     */
+    public Mono<Void> exitReviewMode(WebSocketSession session) {
+        return reviewDialogueService.exitReviewMode(session);
     }
 }
