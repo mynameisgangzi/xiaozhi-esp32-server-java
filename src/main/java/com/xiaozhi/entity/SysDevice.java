@@ -82,9 +82,26 @@ public class SysDevice extends SysRole {
     private String functionNames;
 
     /**
+     * 
+     * 学生所在平台编号
+     */
+    private String tenantCode;
+    /**
      * 学生账号
      */
     private String studentAccount;
+
+    /**
+     * 创建学生所在平台编号 get set方法
+     */
+    public String getTenantCode() {
+        return tenantCode;
+    }
+    public SysDevice setTenantCode(String tenantCode) {
+        this.tenantCode = tenantCode;
+        return this;
+    }
+    
 
     /**
      * get set

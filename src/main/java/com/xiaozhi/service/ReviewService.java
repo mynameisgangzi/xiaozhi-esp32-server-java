@@ -21,7 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-
+import java.util.Calendar;
 @Service
 public class ReviewService {
 
@@ -91,7 +91,18 @@ public class ReviewService {
                         new TypeReference<List<Map<String, String>>>() {});
                     
                     // 缓存结果
-                    redisTemplate.opsForValue().set(cacheKey, tasks, CACHE_EXPIRY_HOURS, TimeUnit.HOURS);
+                    //计算现在离0点还有多称时间
+                    Calendar now = Calendar.getInstance();
+                    Calendar endOfDay = Calendar.getInstance();
+                    endOfDay.set(Calendar.HOUR_OF_DAY, 23);
+                    endOfDay.set(Calendar.MINUTE, 59);
+                    endOfDay.set(Calendar.SECOND, 59);
+                    
+                    long timeUntilEndOfDay = endOfDay.getTimeInMillis() - now.getTimeInMillis();
+                    // 转换为秒，确保至少缓存1分钟
+                    long cacheSeconds = Math.max(timeUntilEndOfDay / 1000, 60);
+                    
+                    redisTemplate.opsForValue().set(cacheKey, tasks, cacheSeconds, TimeUnit.SECONDS);
                     
                     return tasks;
                 }

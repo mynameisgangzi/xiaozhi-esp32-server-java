@@ -155,8 +155,12 @@ public class DialogueService {
         SysDevice device = sessionManager.getDeviceConfig(sessionId);
 
         // 如果设备未注册或不在监听状态，忽略音频数据
-        if (device == null || !sessionManager.isListening(sessionId)) {
-            logger.info("设备未注册或不在监听状态，忽略音频数据");
+        if (device == null) {
+            logger.info("设备未注册，忽略音频数据");
+            return Mono.empty();
+        }
+        if (!sessionManager.isListening(sessionId)) {
+            logger.info("不在监听状态，忽略音频数据");
             return Mono.empty();
         }
 
@@ -216,20 +220,7 @@ public class DialogueService {
                                 if (audioSink != null) {
                                     audioSink.tryEmitComplete();
                                     sessionManager.setStreamingState(sessionId, false);
-                                    
-                                    // 在复习模式下，处理用户的语音输入
-                                    // if (reviewDialogueService.isInReviewMode(sessionId)) {
-                                    //     // 设置为非监听状态，防止处理自己的声音
-                                    //     logger.info("进入复习模式处理，设置为非监听状态");
-                                    //     sessionManager.setListeningState(sessionId, false);
-                                    //     // 处理用户的语音输入，发送音频消息
-                                    //     return reviewDialogueService.processReviewAudio(session, vadResult.getProcessedData())
-                                    //         .doFinally(signal -> {
-                                    //             // 确保在音频完全发送后再恢复监听状态
-                                    //             logger.info("复习模式处理完成，恢复监听状态");
-                                    //             sessionManager.setListeningState(sessionId, true);
-                                    //         });
-                                    // }
+
                                 }
                             }
                             return Mono.empty();
@@ -301,7 +292,7 @@ public class DialogueService {
                                     logger.info("用户已在复习模式中，发送下一个单词");
                                     // 异步处理下一个单词，避免阻塞当前线程
                                     CompletableFuture.runAsync(() -> {
-                                        reviewDialogueService.processNextWord(session)
+                                        reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig)
                                             .subscribe();
                                     });
                                     return; // 不再执行后续的大模型调用

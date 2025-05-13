@@ -3,7 +3,7 @@
 <mapper namespace="com.xiaozhi.dao.DeviceMapper">
 
     <sql id="deviceSql">
-        sys_device.deviceId, sys_device.deviceName, sys_device.ip, sys_device.wifiName, sys_device.chipModelName, sys_device.type, sys_device.version, sys_device.state, sys_device.userId, sys_device.lastLogin, sys_device.createTime
+        sys_device.deviceId, sys_device.deviceName, sys_device.ip, sys_device.wifiName, sys_device.chipModelName, sys_device.type, sys_device.version, sys_device.state, sys_device.userId, sys_device.lastLogin, sys_device.createTime,sys_device.studentAccount,sys_device.tenantCode
     </sql>
 
     <sql id="roleSql">

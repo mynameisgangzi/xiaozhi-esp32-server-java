@@ -69,7 +69,7 @@ public class ReviewDialogueService {
             return Mono.just(false);
         }
 
-        String studentAccount = "XP114841";//device.getStudentAccount();
+        String studentAccount = "XP114841";device.getStudentAccount();
         
         if (studentAccount == null || studentAccount.isEmpty()) {
             logger.warn("无法切换到复习模式：设备未绑定用户");
@@ -169,9 +169,7 @@ public class ReviewDialogueService {
             
             StringBuilder prompt = new StringBuilder();
             prompt.append("第一个单词是：").append(word);
-            
             prompt.append("，请读出这个单词和它的中文意思。");
-            
             String promptMessage = prompt.toString();
             logger.info("生成第一个单词提示：{}", promptMessage);
             
@@ -241,19 +239,8 @@ public class ReviewDialogueService {
     /**
      * 处理下一个单词
      */
-    public Mono<Void> processNextWord(WebSocketSession session) {
-        String sessionId = session.getId();
-        SysDevice device = sessionManager.getDeviceConfig(sessionId);
-        
-        if (device == null) {
-            logger.error("无法获取设备配置");
-            return Mono.empty();
-        }
-        
-        // 获取TTS配置
-        final SysConfig ttsConfig = device.getTtsId() != null ? 
-            sessionManager.getCachedConfig(device.getTtsId()) : null;
-        
+    public Mono<Void> processNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig) {
+
         String studentAccount = device.getStudentAccount();
         
         // 获取当前复习项
@@ -294,13 +281,10 @@ public class ReviewDialogueService {
             
             // 提示下一个单词
             String word = nextWord.get("word");
-            
-            
+
             StringBuilder prompt = new StringBuilder();
-            prompt.append("下一个单词是：").append(word);
-            
-            prompt.append("，请读出这个单词和它的中文意思。");
-            
+            prompt.append("下一个：").append(word);
+
             String promptMessage = prompt.toString();
             logger.info("生成下一个单词提示：{}", promptMessage);
             // 使用SentenceAudioService发送下一个单词提示
