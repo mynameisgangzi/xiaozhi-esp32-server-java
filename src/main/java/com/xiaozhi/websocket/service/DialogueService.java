@@ -593,8 +593,7 @@ public class DialogueService {
                                         isFirst,
                                         isLast,
                                         ttsConfig,
-                                        device.getVoiceName(),
-                                        dialogueId);
+                                        device.getVoiceName());
                             });
                 }).then());
     }
