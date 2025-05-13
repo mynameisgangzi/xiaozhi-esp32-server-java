@@ -41,7 +41,7 @@ public class LlmManager {
     private static final Pattern PAUSE_PATTERN = Pattern.compile("[，、；,;]");
 
     // 冒号和引号等特殊标点
-    private static final Pattern SPECIAL_PATTERN = Pattern.compile("[：:\"'']");
+    private static final Pattern SPECIAL_PATTERN = Pattern.compile("[：:\"]");
 
     // 换行符
     private static final Pattern NEWLINE_PATTERN = Pattern.compile("[\n\r]");
@@ -251,6 +251,12 @@ public class LlmManager {
                         boolean isNewline = NEWLINE_PATTERN.matcher(charStr).find();
                         boolean isEmoji = EmojiUtils.isEmoji(codePoint);
 
+                        // 检查当前句子是否包含颜文字
+                        boolean containsKaomoji = false;
+                        if (currentSentence.length() >= 3) { // 颜文字至少需要3个字符
+                            containsKaomoji = EmojiUtils.containsKaomoji(currentSentence.toString());
+                        }
+
                         // 如果当前字符是句号，检查它是否是数字中的小数点
                         if (isEndMark && charStr.equals(".")) {
                             String context = contextBuffer.toString();
@@ -268,15 +274,19 @@ public class LlmManager {
                         } else if (isNewline) {
                             // 换行符也是强断句信号
                             shouldSendSentence = true;
-                        } else if ((isPauseMark || isSpecialMark || isEmoji)
+                        } else if ((isPauseMark || isSpecialMark || isEmoji || containsKaomoji)
                                 && currentSentence.length() >= MIN_SENTENCE_LENGTH) {
-                            // 停顿标点、特殊标点或表情符号在句子足够长时可以断句
+                            // 停顿标点、特殊标点、表情符号或颜文字在句子足够长时可以断句
                             shouldSendSentence = true;
                         }
 
                         // 如果应该发送句子，且当前句子长度满足要求
                         if (shouldSendSentence && currentSentence.length() >= MIN_SENTENCE_LENGTH) {
                             String sentence = currentSentence.toString().trim();
+
+                            // 过滤颜文字
+                            sentence = EmojiUtils.filterKaomoji(sentence);
+
                             if (containsSubstantialContent(sentence)) {
                                 boolean isFirst = sentenceCount.get() == 0;
                                 boolean isLast = false; // 只有在onComplete中才会有最后一个句子
@@ -323,24 +333,26 @@ public class LlmManager {
 
                 @Override
                 public void onFinal(List<Map<String, Object>> allMessages, LlmService llmService) {
-                    if(allMessages.isEmpty()){
+                    if (allMessages.isEmpty()) {
                         return;
                     }
                     List<Map<String, Object>> newMessages = new ArrayList<>();
-                    //如果本轮对话是function_all或mcp调用(最后一条信息的类型)，把用户的消息类型也修正为同样类型
+                    // 如果本轮对话是function_all或mcp调用(最后一条信息的类型)，把用户的消息类型也修正为同样类型
                     String lastMessageType = allMessages.get(allMessages.size() - 1).get("messageType").toString();
-                    //遍历allMessages，将未保存的user及assistant入库
-                    allMessages.forEach(message ->{
+                    // 遍历allMessages，将未保存的user及assistant入库
+                    allMessages.forEach(message -> {
                         Object messageId = message.get("messageId");
                         String role = String.valueOf(message.get("role"));
 
-                        //消息入库
-                        if(!"system".equals(role) &&  messageId == null){//系统消息跳过
-                            //这里后续看下，是否需要把content为空和角色为tool的入库，目前不入库（这类主要是function_call的二次调用llm进行总结时的过程消息）
-                            String messageContent = message.get("content") == null? "" : String.valueOf(message.get("content"));
-                            if(!"tool".equals(role) && !messageContent.isEmpty() && !message.containsKey("messageId")){//非空未入库消息，则进行入库
+                        // 消息入库
+                        if (!"system".equals(role) && messageId == null) {// 系统消息跳过
+                            // 这里后续看下，是否需要把content为空和角色为tool的入库，目前不入库（这类主要是function_call的二次调用llm进行总结时的过程消息）
+                            String messageContent = message.get("content") == null ? ""
+                                    : String.valueOf(message.get("content"));
+                            if (!"tool".equals(role) && !messageContent.isEmpty()
+                                    && !message.containsKey("messageId")) {// 非空未入库消息，则进行入库
                                 modelContext.addMessage(messageContent, role, lastMessageType);
-                                //数据入库后，给个id，避免下次再被入库
+                                // 数据入库后，给个id，避免下次再被入库
                                 message.put("messageId", 0);
                                 message.put("messageType", lastMessageType);
                                 newMessages.add(message);
@@ -446,9 +458,7 @@ public class LlmManager {
      * 
      * @param deviceId 设备ID
      */
-    public void clearDeviceCache(String deviceId) {
-        deviceLlmServices.remove(deviceId);
-        deviceConfigIds.remove(deviceId);
+    public void clearMessageCache(String deviceId) {
         chatMemory.clearMessages(deviceId);
     }
 

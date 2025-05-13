@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
+import org.springframework.util.StringUtils;
 
 @Component
 public class TtsServiceFactory {
@@ -53,7 +54,7 @@ public class TtsServiceFactory {
         }
         // 如果是默认提供商且尚未初始化，则初始化
         if (DEFAULT_PROVIDER.equals(provider)) {
-            TtsService edgeService = new EdgeTtsService(DEFAULT_VOICE, outputPath);
+            TtsService edgeService = new EdgeTtsService(StringUtils.hasText(voiceName) ? voiceName : DEFAULT_VOICE, outputPath);
             return edgeService;
         }
 

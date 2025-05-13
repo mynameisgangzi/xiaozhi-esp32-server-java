@@ -28,6 +28,8 @@ public interface SysDeviceService {
    */
   public List<SysDevice> query(SysDevice device);
 
+  public SysDevice selectDeviceById(String deviceId);
+
   /**
    * 查询验证码
    */

@@ -10,6 +10,7 @@ import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysUser;
 import com.xiaozhi.service.SysConfigService;
 import com.xiaozhi.utils.CmsUtils;
+import com.xiaozhi.websocket.service.SessionManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +37,9 @@ public class ConfigController {
 
     @Resource
     private SysConfigService configService;
+
+    @Resource
+    private SessionManager sessionManager;
 
     /**
      * 配置查询
@@ -79,7 +83,10 @@ public class ConfigController {
                 if (user != null) {
                     config.setUserId(user.getUserId());
                 }
-                configService.update(config);
+                int rows = configService.update(config);
+                if (rows > 0) {
+                    sessionManager.cacheConfig(config.getConfigId(), config);;
+                }
                 return AjaxResult.success();
             } catch (Exception e) {
                 logger.error(e.getMessage(), e);

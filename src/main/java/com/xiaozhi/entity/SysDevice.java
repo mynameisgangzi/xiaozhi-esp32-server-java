@@ -67,6 +67,11 @@ public class SysDevice extends SysRole {
     private String chipModelName;
 
     /**
+     * 芯片类型
+     */
+    private String type;
+
+    /**
      * 固件版本
      */
     private String version;
@@ -207,6 +212,15 @@ public class SysDevice extends SysRole {
         return this;
     }
 
+    public String getType() {
+        return type;
+    }
+    
+    public SysDevice setType(String type) {
+        this.type = type;
+        return this;
+    }
+
     public String getVersion() {
         return version;
     }
@@ -230,7 +244,7 @@ public class SysDevice extends SysRole {
                 + sttId + ", deviceName=" + deviceName + ", state=" + state + ", totalMessage="
                 + totalMessage + ", code=" + code + ", audioPath=" + audioPath + ", lastLogin=" + lastLogin
                 + ", wifiName=" + wifiName + ", ip=" + ip + ", chipModelName=" + chipModelName
-                + ", version=" + version + ", functionNames=" + functionNames
+                + ", version=" + version + ", functionNames=" + functionNames + ", type=" + type
                 + "]";
     }
 }

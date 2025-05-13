@@ -6,8 +6,8 @@ import com.xiaozhi.entity.*;
 import com.xiaozhi.service.SysDeviceService;
 import com.xiaozhi.service.SysMessageService;
 import com.xiaozhi.utils.CmsUtils;
+import com.xiaozhi.websocket.llm.LlmManager;
 
-import org.bytedeco.librealsense.device;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -18,7 +18,6 @@ import java.util.List;
 import javax.annotation.Resource;
 
 import reactor.core.publisher.Mono;
-import org.springframework.web.bind.annotation.GetMapping;
 
 
 /**
@@ -37,6 +36,9 @@ public class MessageController {
 
     @Resource
     private SysDeviceService deviceService;
+
+    @Resource
+    private LlmManager llmManager;
 
     /**
      * 查询对话
@@ -80,7 +82,11 @@ public class MessageController {
                 if (user != null) {
                     message.setUserId(user.getUserId());
                 }
-                messageService.delete(message);
+                int rows = messageService.delete(message);
+                if (rows > 0) {
+                    // 删除聊天记录应该清空当前已建立的对话缓存
+                    llmManager.clearMessageCache(message.getDeviceId());
+                }
                 return AjaxResult.success();
             } catch (Exception e) {
                 logger.error(e.getMessage(), e);

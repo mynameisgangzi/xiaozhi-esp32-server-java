@@ -1,4 +1,44 @@
 # 变更日志
+## [2.7.50] - 2025-05-10
+
+### 其他变更
+- chore: update version to 2.7.50 [skip ci]
+
+## [2.7.49] - 2025-05-10
+
+### 其他变更
+- chore: update version to 2.7.49 [skip ci]
+
+## [2.7.48] - 2025-05-10
+
+### 其他变更
+- chore: update version to 2.7.48 [skip ci]
+
+## [2.7.47] - 2025-05-10
+
+### 其他变更
+- chore: update version to 2.7.47 [skip ci]
+
+## [2.7.46] - 2025-05-09
+
+### 其他变更
+- chore: update version to 2.7.46 [skip ci]
+
+## [2.7.45] - 2025-05-09
+
+### 其他变更
+- chore: update version to 2.7.45 [skip ci]
+
+## [2.7.44] - 2025-05-09
+
+### 修复
+- fix:改进 PR #75：修复dify逻辑错误问题
+
+### 其他变更
+- chore: update version to 2.7.44 [skip ci]
+- docs: update changelog for v2.7.43 [skip ci]
+- chore: update version to 2.7.43 [skip ci]
+
 ## [2.7.43] - 2025-05-08
 
 ### 其他变更

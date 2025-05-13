@@ -9,7 +9,7 @@
     </parent>
     <groupId>com.xiaozhi.server</groupId>
     <artifactId>xiaozhi.server</artifactId>
-    <version>2.7.43</version>
+    <version>2.7.50</version>
     <name>xiaozhi-server</name>
     <description></description>
 
@@ -169,12 +169,18 @@
             <artifactId>coze-api</artifactId>
             <version>LATEST</version>
         </dependency>
+        <!-- DIFY -->
+        <dependency>
+            <groupId>io.github.imfangs</groupId>
+            <artifactId>dify-java-client</artifactId>
+            <version>1.0.7</version>
+        </dependency>
         <!-- Redis -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
-        
+
         <!-- RestTemplate -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -186,7 +192,6 @@
                 </exclusion>
             </exclusions>
         </dependency>
-
     </dependencies>
 
     <build>

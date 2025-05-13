@@ -272,6 +272,12 @@ export default {
           align: "center",
         },
         {
+          title: "设备类型",
+          dataIndex: "Type",
+          width: 100,
+          align: "center",
+        },
+        {
           title: "版本号",
           dataIndex: "version",
           width: 100,
@@ -303,6 +309,9 @@ export default {
       roleItems: [],
       modelItems: [],
       agentItems: [],
+      // 按提供商分类的智能体
+      cozeAgents: [],
+      difyAgents: [],
       // 修改为三级级联选择器结构
       modelOptions: [
         {
@@ -317,6 +326,11 @@ export default {
             {
               value: "coze",
               label: "Coze",
+              children: []
+            },
+            {
+              value: "dify",
+              label: "Dify",
               children: []
             }
           ]
@@ -406,63 +420,81 @@ export default {
       // 转换为数字进行比较（确保类型一致）
       const modelId = Number(device.modelId);
 
-      // 检查是否为智能体
-      const agent = this.agentItems.find(a => Number(a.configId) === modelId);
-
-      if (agent) {
-        // 是智能体
+      // 先检查是否为Coze智能体
+      const cozeAgent = this.cozeAgents.find(a => Number(a.configId) === modelId);
+      if (cozeAgent) {
         device.modelType = 'agent';
-        device.modelName = agent.agentName || '未知智能体';
-        device.modelDesc = agent.agentDesc || '';
-        device.provider = 'coze'; // 标记提供商
-      } else {
-        // 检查是否为LLM模型
-        const model = this.modelItems.find(m => Number(m.configId) === modelId);
+        device.modelName = cozeAgent.agentName || '未知智能体';
+        device.modelDesc = cozeAgent.agentDesc || '';
+        device.provider = 'coze';
+        return;
+      }
 
-        if (model) {
-          // 是LLM模型
-          device.modelType = 'llm';
-          device.modelName = model.configName || '未知模型';
-          device.modelDesc = model.configDesc || '';
-          device.provider = model.provider || '';
-        } else {
-          // 未找到匹配的模型，但仍然设置基本信息
-          console.warn(`未找到ID为${modelId}的模型或智能体`);
-          device.modelType = 'unknown';
-          device.modelName = `未知模型(ID:${modelId})`;
-          device.modelDesc = '';
-        }
+      // 再检查是否为Dify智能体
+      const difyAgent = this.difyAgents.find(a => Number(a.configId) === modelId);
+      if (difyAgent) {
+        device.modelType = 'agent';
+        device.modelName = difyAgent.agentName || '未知智能体';
+        device.modelDesc = difyAgent.agentDesc || '';
+        device.provider = 'dify';
+        return;
+      }
+
+      // 检查是否为LLM模型
+      const model = this.modelItems.find(m => Number(m.configId) === modelId);
+      if (model) {
+        // 是LLM模型
+        device.modelType = 'llm';
+        device.modelName = model.configName || '未知模型';
+        device.modelDesc = model.configDesc || '';
+        device.provider = model.provider || '';
+      } else {
+        // 未找到匹配的模型，但仍然设置基本信息
+        console.warn(`未找到ID为${modelId}的模型或智能体`);
+        device.modelType = 'unknown';
+        device.modelName = `未知模型(ID:${modelId})`;
+        device.modelDesc = '';
       }
     },
 
-    // 获取级联选择器的值 - 修改为三级结构
+    // 获取级联选择器的值 - 修改为支持Coze和Dify
     getCascaderValue(record) {
       if (!record.modelId) return [];
 
       // 转换为数字类型，确保类型一致性
       const modelId = Number(record.modelId);
 
-      // 智能体只有一个提供商 - coze
+      // 如果已知模型类型和提供商
       if (record.modelType === 'agent') {
-        return ["agent", "coze", modelId];
+        if (record.provider === 'coze') {
+          return ["agent", "coze", modelId];
+        } else if (record.provider === 'dify') {
+          return ["agent", "dify", modelId];
+        }
       } else if (record.modelType === 'llm' && record.provider) {
         // LLM模型需要提供商信息
         return ["llm", record.provider, modelId];
-      } else {
-        // 默认情况下，尝试在两个列表中查找
-        const isAgent = this.agentItems.some(a => Number(a.configId) === modelId);
-        if (isAgent) {
-          return ["agent", "coze", modelId];
-        } else {
-          // 尝试找到LLM模型的提供商
-          const model = this.modelItems.find(m => Number(m.configId) === modelId);
-          if (model && model.provider) {
-            return ["llm", model.provider, modelId];
-          }
-          // 如果找不到提供商，返回空数组
-          return [];
-        }
       }
+
+      // 如果没有明确的类型和提供商，尝试查找
+      // 检查是否为Coze智能体
+      if (this.cozeAgents.some(a => Number(a.configId) === modelId)) {
+        return ["agent", "coze", modelId];
+      }
+      
+      // 检查是否为Dify智能体
+      if (this.difyAgents.some(a => Number(a.configId) === modelId)) {
+        return ["agent", "dify", modelId];
+      }
+      
+      // 检查是否为LLM模型
+      const model = this.modelItems.find(m => Number(m.configId) === modelId);
+      if (model && model.provider) {
+        return ["llm", model.provider, modelId];
+      }
+      
+      // 如果找不到提供商，返回空数组
+      return [];
     },
 
     // 添加设备
@@ -620,7 +652,7 @@ export default {
               this.providerMap = {};
 
               res.data.list.forEach((item) => {
-                if (item.provider == 'coze') {return}
+                // 不再过滤coze提供商，因为现在我们需要区分不同提供商的模型
                 if (item.configType == "llm") {
                   // 确保configId是数字类型
                   item.configId = item.configId;
@@ -662,6 +694,8 @@ export default {
 
     // 重建模型选项结构 - 新增方法
     rebuildModelOptions() {
+      // 清空现有LLM模型提供商
+      this.modelOptions[0].children = [];
 
       // 添加LLM模型提供商
       for (const provider in this.providerMap) {
@@ -685,36 +719,54 @@ export default {
         // 将提供商选项添加到LLM类别下
         this.modelOptions[0].children.push(providerOption);
       }
+
+      // 清空现有智能体提供商下的子项
+      if (this.modelOptions[1] && this.modelOptions[1].children) {
+        this.modelOptions[1].children.forEach(provider => {
+          provider.children = [];
+        });
+      }
     },
 
-    // 获取智能体列表
+    // 获取智能体列表 - 修改为分别查询Coze和Dify
     getAgents() {
       return new Promise((resolve) => {
-        axios
-          .get({
-            url: api.agent.query,
-            data: {
-              provider: "coze",
-            },
-          })
-          .then((res) => {
-            if (res.code === 200) {
-              // 清空现有智能体子项
-              if (this.modelOptions[1] && this.modelOptions[1].children[0]) {
-                this.modelOptions[1].children[0].children = [];
-              }
-
-              // 添加智能体到级联选择器
-              res.data.list.forEach((item) => {
-                // 确保configId是数字类型
+        // 清空现有智能体列表
+        this.agentItems = [];
+        this.cozeAgents = [];
+        this.difyAgents = [];
+        
+        // 创建两个Promise，分别获取Coze和Dify的智能体
+        const getCozeAgents = axios.get({
+          url: api.agent.query,
+          data: {
+            provider: "coze",
+          },
+        });
+        
+        const getDifyAgents = axios.get({
+          url: api.agent.query,
+          data: {
+            provider: "dify",
+          },
+        });
+        
+        // 并行请求两个提供商的智能体
+        Promise.all([getCozeAgents, getDifyAgents])
+          .then(([cozeRes, difyRes]) => {
+            // 处理Coze智能体
+            if (cozeRes.code === 200) {
+              cozeRes.data.list.forEach((item) => {
                 item.configId = item.configId;
-                // 保存configId作为modelId
                 item.modelId = item.configId;
+                item.provider = "coze";
+                this.cozeAgents.push(item);
                 this.agentItems.push(item);
                 
-                // 添加到Coze平台下的智能体列表
-                if (this.modelOptions[1] && this.modelOptions[1].children[0]) {
-                  this.modelOptions[1].children[0].children.push({
+                // 添加到Coze选项
+                const cozeProvider = this.modelOptions[1].children.find(p => p.value === "coze");
+                if (cozeProvider) {
+                  cozeProvider.children.push({
                     value: item.configId,
                     label: item.agentName,
                     isLeaf: true,
@@ -722,13 +774,36 @@ export default {
                   });
                 }
               });
-
-              this.agentsLoaded = true;
-              resolve();
             } else {
-              this.$message.error(res.message);
-              resolve();
+              this.$message.error("获取Coze智能体失败: " + cozeRes.message);
             }
+            
+            // 处理Dify智能体
+            if (difyRes.code === 200) {
+              difyRes.data.list.forEach((item) => {
+                item.configId = item.configId;
+                item.modelId = item.configId;
+                item.provider = "dify";
+                this.difyAgents.push(item);
+                this.agentItems.push(item);
+                
+                // 添加到Dify选项
+                const difyProvider = this.modelOptions[1].children.find(p => p.value === "dify");
+                if (difyProvider) {
+                  difyProvider.children.push({
+                    value: item.configId,
+                    label: item.agentName,
+                    isLeaf: true,
+                    data: item
+                  });
+                }
+              });
+            } else {
+              this.$message.error("获取Dify智能体失败: " + difyRes.message);
+            }
+            
+            this.agentsLoaded = true;
+            resolve();
           })
           .catch(() => {
             this.$message.error("服务器维护/重启中，请稍后再试");
@@ -740,7 +815,7 @@ export default {
     // 处理级联选择器变更 - 修改为三级结构
     handleModelChange(value, deviceId) {
       if (!value || value.length < 3) return;
-      
+     
       const modelType = value[0]; // llm 或 agent
       const provider = value[1];  // 提供商
       const modelId = Number(value[2]); // 模型ID
@@ -764,8 +839,11 @@ export default {
           data.target.modelDesc = '';
         }
       } else if (modelType === "agent") {
+        // 根据提供商选择智能体列表
+        let agentList = provider === "coze" ? this.cozeAgents : this.difyAgents;
+        
         // 从智能体列表中找到对应的智能体
-        const agent = this.agentItems.find(
+        const agent = agentList.find(
           (item) => Number(item.configId) === modelId
         );
         if (agent) {
@@ -824,13 +902,13 @@ export default {
 /* 使下拉框选项居中 */
 
 /* 确保下拉框中的文本居中 */
->>>.ant-select-selection__rendered .ant-select-selection-selected-value {
+>>> .ant-select-selection__rendered .ant-select-selection-selected-value {
   text-align: center !important;
   width: 100% !important;
 }
 
 /* 查询框中的下拉框保持默认对齐方式 */
->>>.table-search .ant-select-selection-selected-value {
+>>> .table-search .ant-select-selection-selected-value {
   text-align: left !important;
 }
 </style>

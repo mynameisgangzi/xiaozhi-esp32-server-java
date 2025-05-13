@@ -126,17 +126,21 @@ public class AudioService {
      * @return 操作完成的Mono
      */
     public Mono<Void> sendAudioMessage(
-            WebSocketSession session,
-            String audioPath,
-            String text,
-            boolean isFirst,
-            boolean isLast) {
-
+        WebSocketSession session,
+        String audioPath,
+        String text,
+        boolean isFirst,
+        boolean isLast) {
         String sessionId = session.getId();
 
         // 标记开始播放
+        AtomicBoolean playingState = isPlaying.computeIfAbsent(sessionId, k -> new AtomicBoolean(true));
+        playingState.set(true);
         logger.info("标记开始播放");
         isPlaying.computeIfAbsent(sessionId, k -> new AtomicBoolean()).set(true);
+
+        // 创建一个 Mono 链来处理整个流程
+        Mono<Void> startMono = isFirst ? sendStart(session) : Mono.empty();
 
         if (isFirst) {
             logger.info("发送TTS开始消息");
@@ -147,80 +151,92 @@ public class AudioService {
             // 如果没有音频路径但是结束消息，发送结束标记
             logger.info("没有音频路径但是结束消息，发送结束标记");
             if (isLast) {
-                return sendStop(session);
+                return startMono.then(sendStop(session));
             }
-            isPlaying.get(sessionId).set(false);
-            return Mono.empty();
+            playingState.set(false);
+            return startMono;
         }
-        return sendSentenceStart(session, text)
-                .then(Mono.fromCallable(() -> {
-                    String fullPath = audioPath;
-                    File audioFile = new File(fullPath);
 
-                    if (!audioFile.exists()) {
-                        logger.warn("音频文件不存在: {}", fullPath);
-                        return null;
-                    }
+        // 使用单独的变量存储播放状态引用
+        final AtomicBoolean finalPlayingState = playingState;
 
-                    List<byte[]> opusFrames;
+        // 发送句子开始标记
+        Mono<Void> sentenceStartMono = sendSentenceStart(session, text);
 
-                    if (audioPath.contains(".opus")) {
-                        logger.info("音频文件是opus文件，直接读取opus帧数据");
-                        // 如果是opus文件，直接读取opus帧数据
-                        opusFrames = opusProcessor.readOpus(audioFile);
-                    } else {
-                        // 如果不是opus文件，按照原来的逻辑处理
-                        byte[] audioData = AudioUtils.readAsPcm(fullPath);
-                        // 将PCM转换为Opus帧
-                        logger.info("不是opus文件，将PCM转换为Opus帧");
-                        opusFrames = opusProcessor.pcmToOpus(
-                                session.getId(), audioData);
-                    }
+        // 处理音频文件
+        Mono<List<byte[]>> processAudioMono = Mono.fromCallable(() -> {
+            String fullPath = audioPath;
+            File audioFile = new File(fullPath);
+            if (!audioFile.exists()) {
+                return null;
+            }
 
-                    return opusFrames;
-                })
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(opusFrames -> {
-                    if (opusFrames == null || opusFrames.isEmpty()) {
-                        if (isLast) {
-                            return sendStop(session);
-                        }
-                        isPlaying.get(sessionId).set(false);
-                        return Mono.empty();
-                    }
+            List<byte[]> opusFrames;
 
-                    // 使用Flux.range创建一个发送序列
-                    return Flux.range(0, opusFrames.size())
-                            // 使用固定间隔发送帧
-                            .delayElements(Duration.ofMillis(OPUS_FRAME_INTERVAL_MS))
-                            // 确保在boundedElastic调度器上执行，以避免阻塞
-                            .publishOn(Schedulers.boundedElastic())
-                            // 只有当会话仍在播放时才发送
-                            .takeWhile(i -> isPlaying(sessionId))
-                            // 发送每一帧
-                            .flatMap(i -> {
-                                // 更新活跃时间
-                                sessionManager.updateLastActivity(sessionId); // 更新活动时间
-                                // 发送帧数据
-                                byte[] frame = opusFrames.get(i);
-                                return sendOpusFrame(session, frame);
-                            })
-                            // 完成后发送结束消息
-                            .then(Mono.fromRunnable(() -> {
-                                logger.info("音频播放完成，设置播放状态为false");
-                                isPlaying.get(sessionId).set(false);
-                            }))
-                            .then(isLast ? sendStop(session) : Mono.empty());
+            if (audioPath.contains(".opus")) {
+                // 如果是opus文件，直接读取opus帧数据
+                logger.info("音频文件是opus文件，直接读取opus帧数据");
+                opusFrames = opusProcessor.readOpus(audioFile);
+            } else {
+                // 如果不是opus文件，按照原来的逻辑处理
+                byte[] audioData = AudioUtils.readAsPcm(fullPath);
+                // 将PCM转换为Opus帧
+                logger.info("不是opus文件，将PCM转换为Opus帧");
+                opusFrames = opusProcessor.pcmToOpus(sessionId, audioData);
+            }
+
+            return opusFrames;
+        })
+        .subscribeOn(Schedulers.boundedElastic());
+
+        // 发送音频帧
+        Mono<Void> sendFramesMono = processAudioMono.flatMap(opusFrames -> {
+            if (opusFrames == null || opusFrames.isEmpty()) {
+                return Mono.empty();
+            }
+
+            // 确保播放状态为true
+            finalPlayingState.set(true);
+
+            // 使用Flux.range创建一个发送序列
+            return Flux.range(0, opusFrames.size())
+                    // 使用固定间隔发送帧
+                    .delayElements(Duration.ofMillis(OPUS_FRAME_INTERVAL_MS))
+                    // 确保在boundedElastic调度器上执行，以避免阻塞
+                    .publishOn(Schedulers.boundedElastic())
+                    // 只有当会话仍在播放时才发送
+                    .takeWhile(i -> finalPlayingState.get())
+                    // 发送每一帧
+                    .flatMap(i -> {
+                        // 更新活跃时间
+                        sessionManager.updateLastActivity(sessionId);
+                        // 发送帧数据
+                        byte[] frame = opusFrames.get(i);
+                        return sendOpusFrame(session, frame);
+                    })
+                    .then();
+        });
+
+        // 发送停止消息（只有在isLast为true时才发送）
+        Mono<Void> stopMono = Mono.fromRunnable(() -> {
+            finalPlayingState.set(false);
+        }).then(isLast ? sendStop(session) : Mono.empty());
+
+        // 组合所有操作，确保按顺序执行
+        return startMono
+                .then(sentenceStartMono)
+                .then(sendFramesMono)
+                .then(stopMono)
+                .doOnError(error -> {
+                    finalPlayingState.set(false);
                 })
                 .onErrorResume(error -> {
-                    logger.error("处理音频消息时发生错误 - SessionId: {}", sessionId, error);
-                    isPlaying.get(sessionId).set(false);
                     // 如果发生错误但仍然是结束消息，确保发送stop
                     if (isLast) {
                         return sendStop(session);
                     }
                     return Mono.empty();
-                }));
+                });
     }
 
     /**
@@ -228,7 +244,6 @@ public class AudioService {
      */
     public Mono<Void> sendOpusFrame(WebSocketSession session, byte[] opusFrame) {
         String sessionId = session.getId();
-        
         try {
             // 直接发送原始Opus帧数据作为二进制消息
             WebSocketMessage wsMessage = session.binaryMessage(
@@ -242,7 +257,10 @@ public class AudioService {
                             logger.error("发送Opus帧失败", error);
                         } else {
                             // 标记播放已停止
-                            isPlaying.get(sessionId).set(false);
+                            AtomicBoolean playingState = isPlaying.get(sessionId);
+                            if (playingState != null) {
+                                playingState.set(false);
+                            }
                         }
                         return Mono.empty();
                     });

@@ -62,6 +62,7 @@ CREATE TABLE `xiaozhi`.`sys_device` (
   `ip` varchar(45) DEFAULT NULL COMMENT 'IP地址',
   `wifiName` varchar(100) DEFAULT NULL COMMENT 'WiFi名称',
   `chipModelName` varchar(100) DEFAULT NULL COMMENT '芯片型号',
+  `type` varchar(50) DEFAULT NULL COMMENT '设备类型',
   `version` varchar(50) DEFAULT NULL COMMENT '固件版本',
   `state` enum('1','0') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '0' COMMENT '设备状态：1-在线，0-离线',
   `userId` int NOT NULL COMMENT '创建人',

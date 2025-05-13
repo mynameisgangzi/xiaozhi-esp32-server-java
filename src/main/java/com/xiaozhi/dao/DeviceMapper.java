@@ -13,6 +13,8 @@ import com.xiaozhi.entity.SysDevice;
 public interface DeviceMapper {
   List<SysDevice> query(SysDevice device);
 
+  SysDevice selectDeviceById(String deviceId);
+
   int generateCode(SysDevice device);
 
   SysDevice queryVerifyCode(SysDevice device);

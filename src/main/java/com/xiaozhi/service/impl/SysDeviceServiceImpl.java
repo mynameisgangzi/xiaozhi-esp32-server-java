@@ -60,7 +60,9 @@ public class SysDeviceServiceImpl implements SysDeviceService {
         // 该配置中不包含 coze 智能体
         List<SysConfig> configs = configMapper.query(queryConfig);
         // 单独查询智能体
-        List<SysConfig> agents = configMapper.query(queryConfig.setProvider("coze").setConfigType("llm"));
+        List<SysConfig> cozeAgents = configMapper.query(queryConfig.setProvider("coze").setConfigType("llm"));
+        List<SysConfig> difyAgents = configMapper.query(queryConfig.setProvider("dify").setConfigType("llm"));
+        
         // 合并去重，按照 configId 去重
         List<SysConfig> mergedConfigs = new ArrayList<>();
 
@@ -72,11 +74,15 @@ public class SysDeviceServiceImpl implements SysDeviceService {
             configMap.put(config.getConfigId(), config);
         }
 
-        // 再添加agents中的配置，如果有相同configId则会覆盖
-        for (SysConfig agent : agents) {
+        // 添加cozeAgents中的配置
+        for (SysConfig agent : cozeAgents) {
             configMap.put(agent.getConfigId(), agent);
         }
-
+        
+        // 添加difyAgents中的配置
+        for (SysConfig agent : difyAgents) {
+            configMap.put(agent.getConfigId(), agent);
+        }
         // 转换回List
         mergedConfigs = new ArrayList<>(configMap.values());
 
@@ -134,6 +140,11 @@ public class SysDeviceServiceImpl implements SysDeviceService {
             PageHelper.startPage(device.getStart(), device.getLimit());
         }
         return deviceMapper.query(device);
+    }
+
+    @Override
+    public SysDevice selectDeviceById(String deviceId) {
+        return deviceMapper.selectDeviceById(deviceId);
     }
 
     /**

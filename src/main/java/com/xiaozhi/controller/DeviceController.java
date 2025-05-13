@@ -1,6 +1,5 @@
 package com.xiaozhi.controller;
 
-import java.net.URI;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +20,7 @@ import com.xiaozhi.service.SysRoleService;
 import com.xiaozhi.utils.CmsUtils;
 import com.xiaozhi.websocket.service.SessionManager;
 
+import org.springframework.util.ObjectUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,11 +50,11 @@ public class DeviceController {
     @Resource
     private SysDeviceService deviceService;
 
-    @Autowired
-    private SysConfigService configService;
-
-    @Autowired
+    @Resource
     private SysRoleService roleService;
+
+    @Resource
+    private SysConfigService configService;
 
     @Resource
     private SessionManager sessionManager;
@@ -121,6 +121,7 @@ public class DeviceController {
             String sessionId = sessionManager.getSessionByDeviceId(deviceId);
 
             if (sessionId != null) {
+                SysDevice olDevice = sessionManager.getDeviceConfig(sessionId);
                 SysDevice updateDevice = device;
                 updateDevice.setSessionId(sessionId);
                 SysRole roleConfig = new SysRole();
@@ -135,6 +136,8 @@ public class DeviceController {
                     updateDevice.setSttId(device.getSttId());
                     if (device.getSttId() != -1) {
                         SysConfig sttConfig = configService.selectConfigById(device.getSttId());
+                        // 清空已缓存的配置信息
+                        sessionManager.removeConfig(olDevice.getSttId());
                         sessionManager.cacheConfig(sttConfig.getConfigId(), sttConfig);
                     }
                 }
@@ -142,10 +145,13 @@ public class DeviceController {
                     updateDevice.setTtsId(roleConfig.getTtsId());
                     if (device.getTtsId() != -1) {
                         SysConfig tssConfig = configService.selectConfigById(roleConfig.getTtsId());
+                        // 清空已缓存的配置信息
+                        sessionManager.removeConfig(olDevice.getTtsId());
                         sessionManager.cacheConfig(tssConfig.getConfigId(), tssConfig);
                         updateDevice.setVoiceName(roleConfig.getVoiceName());
                     }
                 }
+                // 更新配置信息
                 sessionManager.registerDevice(sessionId, updateDevice);
             }
         } catch (Exception e) {
@@ -180,7 +186,7 @@ public class DeviceController {
                             }
 
                             device.setDeviceId(query.getDeviceId());
-                            device.setDeviceName("小智");
+                            device.setDeviceName(query.getType().length() > 0 ? query.getType() : "小智");
                             int row = deviceService.add(device);
                             if (row > 0) {
                                 String deviceId = device.getDeviceId();
@@ -251,70 +257,50 @@ public class DeviceController {
                         SysDevice device = new SysDevice();
                         String deviceIdAuth = null;
 
-                        // 首先从请求头获取设备ID
-                        String[] headerKeys = { "device-Id", "mac_address", "uuid" };
-                        for (String key : headerKeys) {
-                            deviceIdAuth = exchange.getRequest().getHeaders().getFirst(key);
-                            if (deviceIdAuth != null) {
-                                break;
-                            }
-                        }
-
-                        // 如果请求头中没有找到，尝试从URI参数中获取
-                        if (deviceIdAuth == null) {
-                            URI uri = exchange.getRequest().getURI();
-                            String query = uri.getQuery();
-                            if (query != null) {
-                                String[] paramKeys = { "device_id", "mac_address", "uuid" };
-                                for (String key : paramKeys) {
-                                    String paramPattern = key + "=";
-                                    int startIdx = query.indexOf(paramPattern);
-                                    if (startIdx >= 0) {
-                                        startIdx += paramPattern.length();
-                                        int endIdx = query.indexOf('&', startIdx);
-                                        deviceIdAuth = endIdx >= 0 ? query.substring(startIdx, endIdx)
-                                                : query.substring(startIdx);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
+                        // 从请求头获取设备ID
+                        deviceIdAuth = exchange.getRequest().getHeaders().getFirst("Device-Id");
+                        
                         // 解析JSON请求体
-                        if (deviceIdAuth == null &&
-                                exchange.getRequest().getHeaders().getContentType() != null &&
-                                exchange.getRequest().getHeaders().getContentType().toString()
-                                        .contains("application/json")) {
-
+                        try {
                             Map<String, Object> jsonData = objectMapper.readValue(requestBody,
-                                    new TypeReference<Map<String, Object>>() {
-                                    });
-
-                            // 尝试从JSON中获取设备ID
-                            if (jsonData.containsKey("mac_address")) {
+                                    new TypeReference<Map<String, Object>>() {});
+                            
+                            // 获取设备ID (MAC地址)
+                            if (deviceIdAuth == null && jsonData.containsKey("mac_address")) {
                                 deviceIdAuth = (String) jsonData.get("mac_address");
                             }
-                            if (deviceIdAuth == null && jsonData.containsKey("uuid")) {
-                                deviceIdAuth = (String) jsonData.get("uuid");
-                            }
-
-                            // 提取chip_model_name
+                            
+                            // 提取芯片型号
                             if (jsonData.containsKey("chip_model_name")) {
                                 device.setChipModelName((String) jsonData.get("chip_model_name"));
                             }
-
-                            // 提取application.version
+                            
+                            // 提取应用版本
                             if (jsonData.containsKey("application") && jsonData.get("application") instanceof Map) {
                                 Map<String, Object> application = (Map<String, Object>) jsonData.get("application");
                                 if (application.containsKey("version")) {
                                     device.setVersion((String) application.get("version"));
                                 }
                             }
+                            
+                            // 提取WiFi名称和设备类型
+                            if (jsonData.containsKey("board") && jsonData.get("board") instanceof Map) {
+                                Map<String, Object> board = (Map<String, Object>) jsonData.get("board");
+                                if (board.containsKey("ssid")) {
+                                    device.setWifiName((String) board.get("ssid"));
+                                }
+                                if (board.containsKey("type")) {
+                                    device.setType((String) board.get("type"));
+                                }
+                                if (board.containsKey("ip")) {
+                                    device.setIp((String) board.get("ip"));
+                                }
+                            }
+                        } catch (Exception e) {
+                            logger.debug("JSON解析失败: {}", e.getMessage());
                         }
 
                         if (deviceIdAuth == null) {
-                            logger.error("设备ID为空");
-                            // 直接返回错误信息，不使用AjaxResult包装
                             Map<String, Object> errorResponse = new java.util.HashMap<>();
                             errorResponse.put("error", "设备ID为空");
                             return Mono.just(errorResponse);
@@ -323,10 +309,16 @@ public class DeviceController {
                         final String deviceId = deviceIdAuth;
                         device.setDeviceId(deviceId);
                         device.setLastLogin(new Date().toString());
+                        
+                        // 设置设备IP地址（如果JSON中没有获取到）
+                        if (device.getIp() == null) {
+                            String remoteAddress = exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
+                            device.setIp(remoteAddress);
+                        }
 
                         // 查询设备是否已绑定
                         return Mono.fromCallable(() -> deviceService.query(device))
-                                .flatMap(devices -> {
+                                .flatMap(queryDevice -> {
                                     Map<String, Object> responseData = new java.util.HashMap<>();
                                     Map<String, Object> firmwareData = new java.util.HashMap<>();
                                     Map<String, Object> serverTimeData = new java.util.HashMap<>();
@@ -343,30 +335,23 @@ public class DeviceController {
 
                                     // 获取服务器IP和端口
                                     String serverIp = CmsUtils.getServerIp();
-                                    // 获取应用端口
                                     String portStr = environment.getProperty("server.port");
                                     int port = Integer.parseInt(portStr);
 
-                                    // 设置WebSocket token和address，包含端口号
+                                    // 设置WebSocket连接信息
                                     websocketData.put("url",
                                             "ws://" + serverIp + ":" + port + "/ws/xiaozhi/v1/");
                                     websocketData.put("token", "");
-
+                                    
                                     // 检查设备是否已绑定
-                                    if (devices.isEmpty()) {
+                                    if (ObjectUtils.isEmpty(queryDevice)) {
                                         // 设备未绑定，生成验证码
                                         try {
                                             SysDevice codeResult = deviceService.generateCode(device);
-                                            // 只有在需要验证码时才添加activation字段
                                             Map<String, Object> activationData = new java.util.HashMap<>();
                                             activationData.put("code", codeResult.getCode());
                                             activationData.put("message", codeResult.getCode());
                                             responseData.put("activation", activationData);
-
-                                            // 如果是新设备，更新设备信息
-                                            if (devices.isEmpty()) {
-                                                deviceService.update(device);
-                                            }
                                         } catch (Exception e) {
                                             logger.error("生成验证码失败", e);
                                             Map<String, Object> errorResponse = new java.util.HashMap<>();
@@ -374,15 +359,18 @@ public class DeviceController {
                                             return Mono.just(errorResponse);
                                         }
                                     } else {
-                                        // 设备已绑定，不需要返回activation字段
-                                        SysDevice boundDevice = devices.get(0);
-
-                                        // 更新设备状态
-                                        deviceService.update(
-                                                device.setDeviceName(boundDevice.getDeviceName()).setState("1"));
+                                        // 设备已绑定，更新设备状态和信息
+                                        SysDevice boundDevice = queryDevice.get(0);
+                                        
+                                        // 保留原设备名称，更新其他信息
+                                        device.setDeviceName(boundDevice.getDeviceName());
+                                        device.setState("1");
+                                        
+                                        // 更新设备信息
+                                        deviceService.update(device);
                                     }
 
-                                    // 组装响应数据 - 只包含必要的字段
+                                    // 组装响应数据
                                     responseData.put("firmware", firmwareData);
                                     responseData.put("serverTime", serverTimeData);
                                     responseData.put("websocket", websocketData);
@@ -392,7 +380,7 @@ public class DeviceController {
                     } catch (Exception e) {
                         logger.error("处理OTA请求失败", e);
                         Map<String, Object> errorResponse = new java.util.HashMap<>();
-                        errorResponse.put("error", "处理OTA请求失败");
+                        errorResponse.put("error", "处理请求失败: " + e.getMessage());
                         return Mono.just(errorResponse);
                     }
                 });

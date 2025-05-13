@@ -9,6 +9,8 @@ import com.xiaozhi.service.SysConfigService;
 import com.xiaozhi.service.SysDeviceService;
 import com.xiaozhi.websocket.service.*;
 import com.xiaozhi.websocket.tts.factory.TtsServiceFactory;
+
+import org.springframework.util.ObjectUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +26,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.Date;
 
 @Component
@@ -79,7 +82,6 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         if (deviceIdAuth == null) {
             URI uri = session.getHandshakeInfo().getUri();
             String query = uri.getQuery();
-            logger.info("query: {}", query);
             if (query != null) {
                 for (String key : deviceKeys) {
                     String paramPattern = key + "=";
@@ -101,20 +103,17 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         final String deviceId = deviceIdAuth;
         return Mono.fromCallable(() -> {
             logger.info("开始查询设备信息 - DeviceId: {}", deviceId);
-            return deviceService.query(new SysDevice().setDeviceId(deviceId));
+            return deviceService.selectDeviceById(deviceId);
         })
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnError(e -> {
                     logger.error("查询设备信息失败 - DeviceId: " + deviceId, e);
                 })
-                .flatMap(devices -> {
-                    SysDevice device;
-                    if (devices.isEmpty()) {
-                        device = new SysDevice();
+                .flatMap(device -> {
+                    if (ObjectUtils.isEmpty(device)) {
                         device.setDeviceId(deviceId);
                         device.setSessionId(sessionId);
                     } else {
-                        device = devices.get(0);
                         device.setSessionId(sessionId);
                         if (device.getSttId() != null) {
                             SysConfig sttConfig = configService.selectConfigById(device.getSttId());
@@ -139,10 +138,8 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
                         session.receive()
                                 .flatMap(message -> {
                                     if (message.getType() == WebSocketMessage.Type.TEXT) {
-                                        logger.info("收到文本消息 - SessionId: {}, Message: {}", sessionId, message.getPayloadAsText());
                                         return handleTextMessage(session, message);
                                     } else if (message.getType() == WebSocketMessage.Type.BINARY) {
-                                        
                                         return handleBinaryMessage(session, message);
                                     }
                                     return Mono.empty();
@@ -210,28 +207,26 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
             if ("hello".equals(messageType)) {
                 return handleHelloMessage(session, jsonNode);
             }
-            
-            // 对于其他消息类型，检查设备是否已绑定，但避免重复查询
-            if (device == null || device.getModelId() == null) {
-                // 只有在必要时才查询数据库
-                return Mono.fromCallable(
-                        () -> deviceService
-                                .query(new SysDevice().setDeviceId(device.getDeviceId()).setSessionId(sessionId)))
-                        .subscribeOn(Schedulers.boundedElastic())
-                        .flatMap(deviceResult -> {
-                            if (deviceResult.isEmpty() ||
-                                    (deviceResult.get(0).getModelId() == null && device.getModelId() == null)) {
-                                // 设备未绑定，处理未绑定设备的消息
-                                return handleUnboundDevice(session, device);
-                            } else {
-                                // 更新缓存的设备信息
-                                SysDevice updatedDevice = deviceResult.get(0);
-                                sessionManager.registerDevice(sessionId, updatedDevice);
 
-                                // 继续处理消息
-                                return handleMessageByType(session, jsonNode, messageType, updatedDevice);
-                            }
-                        });
+            // 对于其他消息类型，检查设备是否已绑定
+            if (device == null) {
+                // 设备信息不存在，需要查询
+                return Mono.fromCallable(() -> deviceService.selectDeviceById(device.getDeviceId()))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .flatMap(queryDevice -> {
+                        if (ObjectUtils.isEmpty(queryDevice) || queryDevice.getModelId() == null) {
+                            // 设备未绑定，处理未绑定设备的消息
+                            return handleUnboundDevice(session, queryDevice != null ? queryDevice : device);
+                        } else {
+                            // 更新缓存的设备信息
+                            sessionManager.registerDevice(sessionId, queryDevice);
+                            // 继续处理消息
+                            return handleMessageByType(session, jsonNode, messageType, queryDevice);
+                        }
+                    });
+            } else if (device.getModelId() == null) {
+                // 设备存在但未绑定模型，直接处理未绑定设备
+                return handleUnboundDevice(session, device);
             } else {
                 // 设备已绑定且信息已缓存，直接处理消息
                 return handleMessageByType(session, jsonNode, messageType, device);
@@ -272,7 +267,7 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         byte[] opusData = new byte[retainedBuffer.readableByteCount()];
         retainedBuffer.read(opusData);
         DataBufferUtils.release(retainedBuffer);
-        
+
         // 委托给DialogueService处理音频数据
         return dialogueService.processAudioData(session, opusData);
     }
@@ -281,34 +276,34 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
         String deviceId = device.getDeviceId();
         String sessionId = session.getId();
 
-        if (!sessionManager.markCaptchaGeneration(device.getDeviceId())) {
+        // 检查是否已经在处理中
+        if (!sessionManager.markCaptchaGeneration(deviceId)) {
             return Mono.empty();
         }
-        String message;
+
+        // 设备已注册但未配置模型
         if (device.getDeviceName() != null && device.getModelId() == null) {
-            message = "设备未配置对话模型，请到配置页面完成配置后开始对话";
-            return Mono.fromCallable(() -> {
-                return ttsService.getTtsService().textToSpeech(message);
-            }).subscribeOn(Schedulers.boundedElastic())
-                    .flatMap(audioFilePath -> audioService
-                            .sendAudioMessage(session, audioFilePath, message, true, true)
-                            .doFinally(signal -> {
-                                sessionManager.unmarkCaptchaGeneration(deviceId);
-                            }))
-                    .doOnError(e -> {
-                        logger.error("发送音频消息失败 - DeviceId: " + deviceId, e);
-                        // 确保在错误时也移除处理标记
-                        sessionManager.unmarkCaptchaGeneration(deviceId);
-                    });
+            String message = "设备未配置对话模型，请到配置页面完成配置后开始对话";
+
+            return Mono.fromCallable(() -> ttsService.getTtsService().textToSpeech(message))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(audioFilePath -> audioService.sendAudioMessage(session, audioFilePath, message, true, true))
+                .doFinally(signal -> {
+                    // 延迟一段时间后再解除标记
+                    Mono.delay(Duration.ofMillis(1000))
+                        .doOnNext(l -> sessionManager.unmarkCaptchaGeneration(deviceId))
+                        .subscribe();
+                });
         }
 
-        // 设备未在处理中，开始生成验证码
+        // 设备未命名，生成验证码
         return Mono.fromCallable(() -> {
             // 生成新验证码
             SysDevice codeResult = deviceService.generateCode(device);
             String audioFilePath;
             if (!StringUtils.hasText(codeResult.getAudioPath())) {
-                audioFilePath = ttsService.getTtsService().textToSpeech("请到设备管理页面添加设备，输入验证码" + codeResult.getCode());
+                String codeMessage = "请到设备管理页面添加设备，输入验证码" + codeResult.getCode();
+                audioFilePath = ttsService.getTtsService().textToSpeech(codeMessage);
                 codeResult.setDeviceId(deviceId);
                 codeResult.setSessionId(sessionId);
                 codeResult.setAudioPath(audioFilePath);
@@ -317,19 +312,17 @@ public class ReactiveWebSocketHandler implements WebSocketHandler {
                 audioFilePath = codeResult.getAudioPath();
             }
             return codeResult;
-
         })
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(codeResult -> audioService
-                        .sendAudioMessage(session, codeResult.getAudioPath(), codeResult.getCode(), true, true)
-                        .doFinally(signal -> {
-                            sessionManager.unmarkCaptchaGeneration(deviceId);
-                        }))
-                .doOnError(e -> {
-                    logger.error("发送音频消息失败 - DeviceId: " + deviceId, e);
-                    // 确保在错误时也移除处理标记
-                    sessionManager.unmarkCaptchaGeneration(deviceId);
-                });
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(codeResult ->
+            audioService.sendAudioMessage(session, codeResult.getAudioPath(), codeResult.getCode(), true, true)
+        )
+        .doFinally(signal -> {
+            // 延迟一段时间后再解除标记
+            Mono.delay(Duration.ofMillis(1000))
+                .doOnNext(l -> sessionManager.unmarkCaptchaGeneration(deviceId))
+                .subscribe();
+        });
     }
 
     private Mono<Void> handleHelloMessage(WebSocketSession session, JsonNode jsonNode) {

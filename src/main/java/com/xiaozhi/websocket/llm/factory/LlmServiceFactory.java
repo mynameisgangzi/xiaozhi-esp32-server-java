@@ -35,6 +35,8 @@ public class LlmServiceFactory {
                 return new CozeService(endpoint, appId, apiKey, apiSecret, model);
             case "zhipu":
                 return new ZhiPuService(endpoint, appId, apiKey, apiSecret, model);
+            case "dify":
+                return new DifyService(endpoint, appId, apiKey, apiSecret, model);
             // 可以添加更多提供商的支持
             default:
                 // logger.info("未找到匹配的模型提供商 '{}', 默认使用Ollama", provider);

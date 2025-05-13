@@ -237,6 +237,15 @@ public class SessionManager {
     }
 
     /**
+     * 删除配置
+     * 
+     * @param configId 配置ID
+     */
+    public void removeConfig(Integer configId) {
+        configCache.remove(configId);
+    }
+
+    /**
      * 获取会话
      * 
      * @param sessionId 会话ID
