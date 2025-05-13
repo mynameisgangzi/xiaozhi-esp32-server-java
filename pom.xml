@@ -7,6 +7,7 @@
         <version>2.7.18</version>
         <relativePath /> <!-- lookup parent from repository -->
     </parent>
+
     <groupId>com.xiaozhi.server</groupId>
     <artifactId>xiaozhi.server</artifactId>
     <version>2.7.52</version>
