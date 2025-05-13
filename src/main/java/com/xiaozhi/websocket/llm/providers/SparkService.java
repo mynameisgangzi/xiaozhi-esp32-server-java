@@ -31,7 +31,8 @@ public class SparkService extends AbstractOpenAiLlmService {
      * @param model    模型名称
      */
     public SparkService(String endpoint, String appId, String apiKey, String apiSecret, String model) {
-        super(endpoint, appId, apiKey, apiSecret, model);
+        super(endpoint, appId, apiKey != null?apiKey : apiSecret, apiSecret, model);
+
     }
 
     @Override
@@ -107,30 +108,19 @@ public class SparkService extends AbstractOpenAiLlmService {
         requestBody.put("stream", true);
         requestBody.put("messages", messages);
 
-        //星火只有个别模型支持tools，这里做个判断，否则会导致模型调用报错
-        if(!model.equalsIgnoreCase("4.0Ultra") && !model.equalsIgnoreCase("generalv3.5")){
-            return JsonUtil.toJson(requestBody);
-        }
-        FunctionSessionHolder functionSessionHolder = modelContext.getFunctionSessionHolder();
-        if(functionSessionHolder != null){
-            List<FunctionLlmDescription> tools = functionSessionHolder.getAllFunctionLlmDescription();
-            if(!tools.isEmpty()){
-                requestBody.put("tools", tools);
+
+        if(modelContext.isUseFunctionCall() && supportFunctionCall) {
+            FunctionSessionHolder functionSessionHolder = modelContext.getFunctionSessionHolder();
+            if(functionSessionHolder != null){
+                List<FunctionLlmDescription> tools = functionSessionHolder.getAllFunctionLlmDescription();
+                if(!tools.isEmpty()){
+                    requestBody.put("tools", tools);
+                }
             }
         }
 
         // 转换为JSON
         return JsonUtil.toJson(requestBody);
-    }
-
-    protected Request buildRequest(String jsonBody) {
-        // 构建请求
-        return new Request.Builder()
-                .url(endpoint + "/chat/completions")
-                .post(RequestBody.create(jsonBody, JSON))
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Authorization", "Bearer " + apiSecret) // 使用apiSecret作为Bearer token
-                .build();
     }
 
     /**
@@ -152,6 +142,14 @@ public class SparkService extends AbstractOpenAiLlmService {
             toolCallInfo.appendArgumentsJson(arguments);
         }
         return toolCallInfo;
+    }
+
+    @Override
+    protected void testFunctionCall() throws Exception {
+        //星火只有个别模型支持tools，这里做个判断，否则会导致模型调用报错
+        if(model.equalsIgnoreCase("4.0Ultra") || model.equalsIgnoreCase("generalv3.5")){
+            supportFunctionCall = true;
+        }
     }
 
     @Override

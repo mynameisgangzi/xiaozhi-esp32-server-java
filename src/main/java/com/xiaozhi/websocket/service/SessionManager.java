@@ -60,6 +60,9 @@ public class SessionManager {
 
     // 存储每个会话的最后有效活动时间
     private final ConcurrentHashMap<String, Instant> lastActivityTime = new ConcurrentHashMap<>();
+    
+    // 存储会话属性
+    private final ConcurrentHashMap<String, ConcurrentHashMap<String, Object>> sessionAttributes = new ConcurrentHashMap<>();
 
     // 定时任务执行器
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -155,6 +158,8 @@ public class SessionManager {
         iotDescriptors.remove(sessionId); // 清理Iot部件描述信息
         functionHolders.remove(sessionId);// 清理function_call tools
         closeAfterChat.remove(sessionId);
+        sessionAttributes.remove(sessionId); // 清理会话属性
+        
         // 清理音频流
         Sinks.Many<byte[]> sink = audioSinks.remove(sessionId);
         if (sink != null) {
@@ -417,5 +422,55 @@ public class SessionManager {
      */
     public void unmarkCaptchaGeneration(String deviceId) {
         captchaState.remove(deviceId);
+    }
+    
+    /**
+     * 设置会话属性
+     * 
+     * @param sessionId 会话ID
+     * @param key 属性键
+     * @param value 属性值
+     */
+    public void setSessionAttribute(String sessionId, String key, Object value) {
+        ConcurrentHashMap<String, Object> attributes = sessionAttributes.computeIfAbsent(sessionId, 
+                k -> new ConcurrentHashMap<>());
+        attributes.put(key, value);
+    }
+    
+    /**
+     * 获取会话属性
+     * 
+     * @param sessionId 会话ID
+     * @param key 属性键
+     * @return 属性值
+     */
+    public Object getSessionAttribute(String sessionId, String key) {
+        ConcurrentHashMap<String, Object> attributes = sessionAttributes.get(sessionId);
+        if (attributes != null) {
+            return attributes.get(key);
+        }
+        return null;
+    }
+    
+    /**
+     * 移除会话属性
+     * 
+     * @param sessionId 会话ID
+     * @param key 属性键
+     */
+    public void removeSessionAttribute(String sessionId, String key) {
+        ConcurrentHashMap<String, Object> attributes = sessionAttributes.get(sessionId);
+        if (attributes != null) {
+            attributes.remove(key);
+        }
+    }
+    
+    /**
+     * 清理会话属性
+     * 
+     * @param sessionId 会话ID
+     */
+    public void clearSessionAttributes(String sessionId) {
+        sessionAttributes.remove(sessionId);
     }
 }

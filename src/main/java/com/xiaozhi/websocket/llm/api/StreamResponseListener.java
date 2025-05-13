@@ -25,17 +25,12 @@ public interface StreamResponseListener {
      * 当流式响应完成时调用
      * 
      * @param fullResponse 完整的响应内容
-     */
-    void onComplete(String fullResponse);
-
-
-    /**
-     * 当流式响应完成时调用
-     *
-     * @param allMessages 当前交互的所有消息列表内容
+     * @param hisMessages 当前交互的所有历史消息列表内容（不含fullResponse）
      * @param llmService 当前处理消息的llmService
+     * @param messageType 回复消息类型
      */
-    void onFinal(List<Map<String, Object>> allMessages, LlmService llmService);
+    void onComplete(String fullResponse, List<Map<String, Object>> hisMessages,
+                    LlmService llmService, String messageType);
 
     /**
      * 当发生错误时调用

@@ -142,14 +142,8 @@ public class OllamaService extends AbstractLlmService {
                         }
                     }
 
-                    Map<String, Object> responseMessage = new HashMap<>();
-                    responseMessage.put("role", "assistant");
-                    responseMessage.put("content", fullResponse);
-                    responseMessage.put("messageType", SysMessage.MESSAGE_TYPE_NORMAL);
-                    messages.add(responseMessage);
                     // 通知完成
-                    streamListener.onComplete(fullResponse.toString());
-                    streamListener.onFinal(messages, OllamaService.this);
+                    streamListener.onComplete(fullResponse.toString(), messages, OllamaService.this, SysMessage.MESSAGE_TYPE_NORMAL);
                 }
             }
         });

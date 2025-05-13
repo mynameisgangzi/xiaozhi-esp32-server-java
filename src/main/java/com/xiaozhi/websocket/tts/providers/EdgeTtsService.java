@@ -40,7 +40,7 @@ public class EdgeTtsService implements TtsService {
     @Override
     public String getAudioFileName() {
         String uuid = UUID.randomUUID().toString().replace("-", "");
-        return uuid + ".opus";
+        return uuid + ".mp3";
     }
 
     @Override

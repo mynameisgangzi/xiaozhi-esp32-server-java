@@ -8,15 +8,15 @@ import com.xiaozhi.websocket.llm.tool.ActionType;
 import com.xiaozhi.websocket.llm.tool.ToolResponse;
 import com.xiaozhi.websocket.llm.tool.function.FunctionSessionHolder;
 import com.xiaozhi.websocket.llm.tool.function.bean.FunctionLlmDescription;
+import com.xiaozhi.websocket.llm.tool.function.bean.description.FunctionDesc;
 import okhttp3.*;
 import okio.BufferedSource;
 import org.jetbrains.annotations.NotNull;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 基于OpenAI标准协议接口的的 LLM服务实现
@@ -34,6 +34,54 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
      */
     public AbstractOpenAiLlmService(String endpoint, String appId, String apiKey, String apiSecret, String model) {
         super(endpoint, appId, apiKey, apiSecret, model);
+        Mono.fromCallable(() -> {
+            try {
+                testFunctionCall();
+            } catch (Exception e) {
+                logger.error("初始化LlmService服务时testFunctionCall发生错误，看来该模型不支持function_call，这条异常信息可以忽略", e);
+            }
+            return null;
+        }).subscribeOn(Schedulers.boundedElastic()).subscribe();
+
+    }
+
+    @Override
+    protected String chat(List<Map<String, Object>> messages) throws IOException {
+        // 构建请求体
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", messages);
+
+        // 转换为JSON
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        // 构建请求
+        Request request = new Request.Builder()
+                .url(endpoint + "/chat/completions")
+                .post(RequestBody.create(jsonBody, JSON))
+                .addHeader("Authorization", "Bearer " + apiKey)
+                .build();
+
+        // 发送请求
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("请求失败: " + response);
+            }
+
+            String responseBody = response.body().string();
+            Map<String, Object> responseMap = objectMapper.readValue(responseBody,
+                    new TypeReference<Map<String, Object>>() {
+                    });
+
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
+            if (choices != null && !choices.isEmpty()) {
+                Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+                if (message != null) {
+                    return (String) message.get("content");
+                }
+            }
+            throw new IOException("无法解析响应");
+        }
     }
 
     @Override
@@ -55,11 +103,13 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
         requestBody.put("stream", true);
         requestBody.put("messages", messages);
 
-        FunctionSessionHolder functionSessionHolder = modelContext.getFunctionSessionHolder();
-        if(functionSessionHolder != null){
-            List<FunctionLlmDescription> tools = functionSessionHolder.getAllFunctionLlmDescription();
-            if(!tools.isEmpty()){
-                requestBody.put("tools", tools);
+        if(modelContext.isUseFunctionCall() && supportFunctionCall){
+            FunctionSessionHolder functionSessionHolder = modelContext.getFunctionSessionHolder();
+            if(functionSessionHolder != null){
+                List<FunctionLlmDescription> tools = functionSessionHolder.getAllFunctionLlmDescription();
+                if(!tools.isEmpty()){
+                    requestBody.put("tools", tools);
+                }
             }
         }
 
@@ -154,6 +204,7 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
                 }
 
                 boolean isFunctionResultReqLlm = false;//是否存在REQLLM的函数调用
+                String messageType = SysMessage.MESSAGE_TYPE_NORMAL;
                 // 处理函数调用
                 if(toolCallInfo != null){
                     try{
@@ -164,29 +215,18 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
                             }else{
                                 //非REQLLM函数，则将消息添加到消息列表，并设置完整内容为工具的response内容
                                 fullResponse.append(toolResponse.getResponse());
-                                Map<String, Object> responseMessage = new HashMap<>();
-                                responseMessage.put("role", "assistant");
-                                responseMessage.put("content", fullResponse);
-                                responseMessage.put("messageType", SysMessage.MESSAGE_TYPE_FUNCTION_CALL);
-                                messages.add(responseMessage);
+                                messageType = SysMessage.MESSAGE_TYPE_FUNCTION_CALL;
                             }
                         }
                     }catch (Exception e){
                         logger.error("函数调用失败: {}", e.getMessage(), e);
                         streamListener.onError(e);
                     }
-                }else{
-                    Map<String, Object> responseMessage = new HashMap<>();
-                    responseMessage.put("role", "assistant");
-                    responseMessage.put("content", fullResponse);
-                    responseMessage.put("messageType", SysMessage.MESSAGE_TYPE_NORMAL);
-                    messages.add(responseMessage);
                 }
 
                 if(!isFunctionResultReqLlm){
                     // 通知完成
-                    streamListener.onComplete(fullResponse.toString());
-                    streamListener.onFinal(messages, AbstractOpenAiLlmService.this);
+                    streamListener.onComplete(fullResponse.toString(), messages, AbstractOpenAiLlmService.this, messageType);
                 }
             }
         }
@@ -293,5 +333,60 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
         //平台自行标记，非接口字段
         message.put("messageType", "FUNCTION_CALL");
         return message;
+    }
+
+    protected void testFunctionCall() throws Exception {
+        List<Map<String, Object>> formattedMessages = new ArrayList<>();
+        // 添加提示词信息
+        Map<String, Object> systemMsg = new HashMap<>();
+        systemMsg.put("role", "system");
+        systemMsg.put("content", "你是一个工具助手，能够调用函数来完成任务。目前只有一个function: test_function");
+        formattedMessages.add(systemMsg);
+
+        // 添加当前用户消息
+        Map<String, Object> currentUserMsg = new HashMap<>();
+        currentUserMsg.put("role", "user");
+        currentUserMsg.put("content", "帮我调用function: test_function");
+        formattedMessages.add(currentUserMsg);
+
+        // 创建函数名称，格式：get_{属性名称}
+        String funcName = "test_function";
+        // 创建函数对象
+        FunctionDesc function = new FunctionDesc(funcName, "这是函数：test_function");
+        FunctionLlmDescription functionLlmDescription = new FunctionLlmDescription(function);
+
+        // 构建请求体
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", formattedMessages);
+        requestBody.put("tools", Collections.singletonList(functionLlmDescription));
+
+        // 转换为JSON
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        // 构建请求
+        Request request = new Request.Builder()
+                .url(endpoint + "/chat/completions")
+                .post(RequestBody.create(jsonBody, JSON))
+                .addHeader("Authorization", "Bearer " + apiKey)
+                .build();
+        // 发送请求
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("请求失败: " + response);
+            }
+            String responseBody = response.body().string();
+
+            Map<String, Object> responseMap = objectMapper.readValue(responseBody,
+                    new TypeReference<Map<String, Object>>() {
+                    });
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
+            if (choices != null && !choices.isEmpty()) {
+                Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+                if (message != null) {
+                    supportFunctionCall = message.containsKey("tool_calls");
+                }
+            }
+        }
     }
 }

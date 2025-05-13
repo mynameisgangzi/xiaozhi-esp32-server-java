@@ -38,7 +38,7 @@ public class DatabaseChatMemory implements ChatMemory {
     private Map<String, String> systemMessageCache = new ConcurrentHashMap<>();
 
     @Override
-    public void addMessage(String deviceId, String sessionId, String sender, String content, Integer roleId, String messageType) {
+    public void addMessage(String deviceId, String sessionId, String sender, String content, Integer roleId, String messageType, String audioPath) {
         try {
             SysMessage message = new SysMessage();
             message.setDeviceId(deviceId);
@@ -51,6 +51,8 @@ public class DatabaseChatMemory implements ChatMemory {
                 // 目前生成的语音保存采用默认的语音合成服务，后续可以考虑支持自定义语音合成服务
                 // todo
                 message.setAudioPath(ttsService.getDefaultTtsService().textToSpeech(content));
+            } else {
+                message.setAudioPath(audioPath);
             }
             messageService.add(message);
         } catch (Exception e) {

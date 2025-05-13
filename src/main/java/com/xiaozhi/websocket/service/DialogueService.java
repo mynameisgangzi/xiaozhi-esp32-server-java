@@ -2,6 +2,7 @@ package com.xiaozhi.websocket.service;
 
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
+import com.xiaozhi.utils.AudioUtils;
 import com.xiaozhi.utils.EmojiUtils;
 import com.xiaozhi.utils.EmojiUtils.EmoSentence;
 import com.xiaozhi.websocket.llm.LlmManager;
@@ -19,6 +20,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
@@ -64,7 +66,7 @@ public class DialogueService {
 
     @Autowired
     private ReviewDialogueService reviewDialogueService;
-    
+
     @Autowired
     private SentenceAudioService sentenceAudioService;
 
@@ -89,6 +91,7 @@ public class DialogueService {
         private long timestamp = System.currentTimeMillis();
         private double modelResponseTime = 0.0; // 模型响应时间（秒）
         private double ttsGenerationTime = 0.0; // TTS生成时间（秒）
+        private String dialogueId = null; // 对话ID
 
         public Sentence(int seq, String text, boolean isFirst, boolean isLast) {
             this.seq = seq;
@@ -144,6 +147,14 @@ public class DialogueService {
 
         public double getTtsGenerationTime() {
             return ttsGenerationTime;
+        }
+
+        public void setDialogueId(String dialogueId) {
+            this.dialogueId = dialogueId;
+        }
+
+        public String getDialogueId() {
+            return dialogueId;
         }
     }
 
@@ -268,6 +279,10 @@ public class DialogueService {
 
         final SysConfig finalTtsConfig = ttsConfig;
 
+        // 为当前对话生成唯一ID
+        final String dialogueId = sessionId + "_" + System.currentTimeMillis();
+        sessionManager.setSessionAttribute(sessionId, "currentDialogueId", dialogueId);
+
         // 启动流式识别
         sttService.streamRecognition(audioSink.asFlux())
                 .defaultIfEmpty("")
@@ -276,64 +291,61 @@ public class DialogueService {
                     if (!StringUtils.hasText(finalText)) {
                         return Mono.empty();
                     }
-                    
+
                     initChat(sessionId);
 
                     // 设置会话为非监听状态，防止处理自己的声音
                     sessionManager.setListeningState(sessionId, false);
 
-                    // 发送最终识别结果，并立即发送TTS开始状态
-                    return messageService.sendMessage(session, "stt", "final", finalText)
-                            .then(audioService.sendStart(session)) // 立即发送TTS开始状态
-                            .then(Mono.fromRunnable(() -> {
-                                // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
-                                // 先检查是否已经在复习模式中
-                                if (reviewDialogueService.isInReviewMode(sessionId)) {
-                                    logger.info("用户已在复习模式中，发送下一个单词");
-                                    // 异步处理下一个单词，避免阻塞当前线程
-                                    CompletableFuture.runAsync(() -> {
-                                        reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig)
-                                            .subscribe();
-                                    });
-                                    return; // 不再执行后续的大模型调用
+                    // 获取完整的音频数据并保存
+                    return Mono.fromCallable(() -> {
+                        // 获取完整的PCM数据 - 使用原始未处理的PCM数据而非处理后的
+                        List<byte[]> pcmFrames = vadService.getRawAudioData(sessionId);
+                        String userAudioPath = null;
+
+                        if (pcmFrames != null && !pcmFrames.isEmpty()) {
+                            try {
+                                // 简单合并PCM帧，不进行任何额外处理
+                                int totalSize = pcmFrames.stream().mapToInt(frame -> frame.length).sum();
+                                byte[] fullPcmData = new byte[totalSize];
+                                int offset = 0;
+
+                                // 直接合并，不进行淡入淡出处理
+                                for (byte[] frame : pcmFrames) {
+                                    System.arraycopy(frame, 0, fullPcmData, offset, frame.length);
+                                    offset += frame.length;
                                 }
-                                // 判断是否需要进入复习模式
-                                if (reviewDialogueService.containsLearningIntent(finalText)) {
-                                    logger.info("检测到学习意图，启动复习模式而不是调用大模型");
-                                    // 异步启动复习模式，避免阻塞当前线程
-                                    CompletableFuture.runAsync(() -> {
-                                        reviewDialogueService.tryEnterReviewMode(session,sessionId, finalText, device,ttsConfig)
-                                            .subscribe();
-                                    });
-                                    return; // 不再执行后续的大模型调用
-                                }
-                                // 使用句子切分处理响应
-                                llmManager.chatStreamBySentence(device, finalText,
-                                        (sentence, isFirst, isLast) -> {
-                                            // 使用SentenceAudioService处理句子
-                                            sentenceAudioService.handleSentence(
-                                                    session,
-                                                    sessionId,
-                                                    sentence,
-                                                    isFirst,
-                                                    isLast,
-                                                    finalTtsConfig,
-                                                    device.getVoiceName());
-                                            
-                                            // 累加完整回复内容
-                                            if (sentence != null && !sentence.isEmpty()) {
-                                                responses.get(sessionId).append(sentence);
-                                            }
-                                        });
-                            }));
-                    // 检查是否包含学习意图，如果有则进入复习模式
-                    
-                })
-                .onErrorResume(error -> {
-                    logger.error("流式识别错误: {}", error.getMessage(), error);
-                    return Mono.empty();
-                })
-                .subscribe();
+
+                                // 保存完整的PCM数据
+                                userAudioPath = AudioUtils.AUDIO_PATH + AudioUtils.saveAsWav(fullPcmData);
+                                sessionManager.setSessionAttribute(sessionId, "userAudioPath_" + dialogueId,
+                                        userAudioPath);
+                            } catch (Exception e) {
+                                logger.error("保存用户音频失败: {}", e.getMessage(), e);
+                            }
+                        }
+
+                        return finalText;
+                    })
+                            .subscribeOn(Schedulers.boundedElastic())
+                            .flatMap(text -> messageService.sendMessage(session, "stt", "final", text)
+                                    .then(audioService.sendStart(session))
+                                    .then(Mono.fromRunnable(() -> {
+                                        // 使用句子切分处理响应
+                                        llmManager.chatStreamBySentence(device, finalText, true,
+                                                (sentence, isFirst, isLast) -> {
+                                                    handleSentence(
+                                                            session,
+                                                            sessionId,
+                                                            sentence,
+                                                            isFirst,
+                                                            isLast,
+                                                            finalTtsConfig,
+                                                            device.getVoiceName(),
+                                                            dialogueId); // 传递对话ID
+                                                });
+                                    })));
+                }).subscribe();
 
         return Mono.empty();
     }
@@ -361,7 +373,8 @@ public class DialogueService {
             boolean isFirst,
             boolean isLast,
             SysConfig ttsConfig,
-            String voiceName) {
+            String voiceName,
+            String dialogueId) { // 添加对话ID参数
 
         // 获取句子序列号
         int seq = seqCounters.get(sessionId).incrementAndGet();
@@ -383,6 +396,7 @@ public class DialogueService {
         // 创建句子对象
         Sentence sentence = new Sentence(seq, text, isFirst, isLast);
         sentence.setModelResponseTime(responseTime); // 记录模型响应时间
+        sentence.setDialogueId(dialogueId); // 设置对话ID
 
         // 添加到句子队列
         CopyOnWriteArrayList<Sentence> queue = sentenceQueue.get(sessionId);
@@ -413,12 +427,17 @@ public class DialogueService {
                 sentence.setTtsGenerationTime(ttsGenerationTime);
 
                 // 记录日志
-                logger.info("句子音频生成完成 - 序号: {}, 模型响应: {}秒, 语音生成: {}秒, 内容: \"{}\"",
-                        seq, df.format(sentence.getModelResponseTime()),
+                logger.info("句子音频生成完成 - 序号: {}, 对话ID: {}, 模型响应: {}秒, 语音生成: {}秒, 内容: \"{}\"",
+                        seq, dialogueId, df.format(sentence.getModelResponseTime()),
                         df.format(sentence.getTtsGenerationTime()), text);
 
                 // 标记音频准备就绪
                 sentence.setAudio(audioPath);
+
+                // 如果是最后一个句子，存储助手的完整音频路径
+                if (isLast && audioPath != null) {
+                    sessionManager.setSessionAttribute(sessionId, "assistantAudioPath_" + dialogueId, audioPath);
+                }
 
                 // 尝试处理队列
                 processQueue(session, sessionId);
@@ -552,12 +571,19 @@ public class DialogueService {
         // 设置为非监听状态，防止处理自己的声音
         sessionManager.setListeningState(sessionId, false);
 
+        // 为当前对话生成唯一ID
+        final String dialogueId = sessionId + "_" + System.currentTimeMillis();
+        sessionManager.setSessionAttribute(sessionId, "currentDialogueId", dialogueId);
+
+        // 保存用户消息内容（唤醒词）
+        sessionManager.setSessionAttribute(sessionId, "userMessage_" + dialogueId, text);
+
         // 发送识别结果
         return messageService.sendMessage(session, "stt", "start", text)
                 .then(audioService.sendStart(session)) // 立即发送TTS开始状态
                 .then(Mono.fromRunnable(() -> {
                     // 使用句子切分处理响应
-                    llmManager.chatStreamBySentence(device, text,
+                    llmManager.chatStreamBySentence(device, text, true,
                             (sentence, isFirst, isLast) -> {
                                 // 使用SentenceAudioService处理句子
                                 sentenceAudioService.handleSentence(
@@ -567,12 +593,8 @@ public class DialogueService {
                                         isFirst,
                                         isLast,
                                         ttsConfig,
-                                        device.getVoiceName());
-                                
-                                // 累加完整回复内容
-                                if (sentence != null && !sentence.isEmpty()) {
-                                    responses.get(sessionId).append(sentence);
-                                }
+                                        device.getVoiceName(),
+                                        dialogueId);
                             });
                 }).then());
     }
@@ -611,13 +633,13 @@ public class DialogueService {
         responses.remove(sessionId);
         sentenceQueue.remove(sessionId);
         locks.remove(sessionId);
-        
+
         // 清理SentenceAudioService中的资源
         sentenceAudioService.cleanupSession(sessionId);
 
         // 清理AudioService中的资源
         audioService.cleanupSession(sessionId);
-        
+
         // 清理复习模式资源
         reviewDialogueService.cleanupSession(sessionId);
         logger.info("清理会话资源 - SessionId: {}", sessionId);

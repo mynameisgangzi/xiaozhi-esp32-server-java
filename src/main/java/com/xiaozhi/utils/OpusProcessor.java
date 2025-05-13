@@ -54,7 +54,7 @@ public class OpusProcessor {
 
         try {
             OpusDecoder decoder = getDecoder(sid);
-            short[] buf = new short[FRAME_SIZE * 6];
+            short[] buf = new short[FRAME_SIZE * 12];
             int samples = decoder.decode(data, 0, data.length, buf, 0, buf.length, false);
 
             byte[] pcm = new byte[samples * 2];

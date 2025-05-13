@@ -191,6 +191,7 @@ public class CozeService extends AbstractLlmService {
                             },
                             () -> {
                                 boolean isFunctionResultReqLlm = false;
+                                String messageType = SysMessage.MESSAGE_TYPE_NORMAL;
                                 // 处理函数调用
                                 if(toolCallInfo.getTool_call_id() != null){
                                     try{
@@ -201,32 +202,19 @@ public class CozeService extends AbstractLlmService {
                                             }else{
                                                 //非REQLLM函数，则将消息添加到消息列表，并设置完整内容为工具的response内容
                                                 fullResponse.append(toolResponse.getResponse());
-                                                Map<String, Object> responseMessage = new HashMap<>();
-                                                responseMessage.put("role", "assistant");
-                                                responseMessage.put("content", fullResponse);
-                                                responseMessage.put("messageType", SysMessage.MESSAGE_TYPE_FUNCTION_CALL);
-                                                messages.add(responseMessage);
+                                                messageType = SysMessage.MESSAGE_TYPE_FUNCTION_CALL;
                                             }
                                         }
                                     }catch (Exception e){
                                         logger.error("函数调用失败: {}", e.getMessage(), e);
                                         streamListener.onError(e);
                                     }
-                                }else{
-                                    if (fullResponse.length() > 0) {
-                                        Map<String, Object> responseMessage = new HashMap<>();
-                                        responseMessage.put("role", "assistant");
-                                        responseMessage.put("content", fullResponse);
-                                        responseMessage.put("messageType", SysMessage.MESSAGE_TYPE_NORMAL);
-                                        messages.add(responseMessage);
-                                    }
                                 }
 
                                 // 如果没有收到CONVERSATION_CHAT_COMPLETED事件，在这里确保通知完成
                                 if(!isFunctionResultReqLlm ){
                                     if (fullResponse.length() > 0) {
-                                        streamListener.onComplete(fullResponse.toString());
-                                        streamListener.onFinal(messages, CozeService.this);
+                                        streamListener.onComplete(fullResponse.toString(), messages, CozeService.this, messageType);
                                     } else {
                                         streamListener.onError(new IOException("未收到有效响应"));
                                     }
@@ -273,13 +261,7 @@ public class CozeService extends AbstractLlmService {
                             streamListener.onError(throwable);
                         }, ()->{
                             if (fullResponse.length() > 0) {
-                                Map<String, Object> responseMessage = new HashMap<>();
-                                responseMessage.put("role", "assistant");
-                                responseMessage.put("content", fullResponse);
-                                responseMessage.put("messageType", "NORMAL");
-                                messages.add(responseMessage);
-                                streamListener.onComplete(fullResponse.toString());
-                                streamListener.onFinal(messages, CozeService.this);
+                                streamListener.onComplete(fullResponse.toString(), messages, CozeService.this, SysMessage.MESSAGE_TYPE_FUNCTION_CALL);
                             } else {
                                 streamListener.onError(new IOException("未收到有效响应"));
                             }

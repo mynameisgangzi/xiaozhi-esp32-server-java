@@ -42,11 +42,17 @@ public class VadService {
     @Value("${app.vad.min-silence-duration:500}")
     private int minSilenceDuration;
 
-    @Value("${app.vad.pre-buffer-duration:500}")
+    @Value("${app.vad.pre-buffer-duration:300}")  // 减少预缓冲区时间，避免重复
     private int preBufferDuration;
 
-    @Value("${app.vad.enable-noise-reduction:true}")
+    @Value("${app.vad.enable-noise-reduction:false}")
     private boolean enableNoiseReduction;
+    
+    @Value("${app.vad.enable-voice-enhancement:true}")
+    private boolean enableVoiceEnhancement;
+    
+    @Value("${app.vad.voice-enhancement-gain:1.5}")
+    private float voiceEnhancementGain;
 
     // 噪声抑制器
     private TarsosNoiseReducer tarsosNoiseReducer;
@@ -62,6 +68,13 @@ public class VadService {
             if (enableNoiseReduction) {
                 tarsosNoiseReducer = new TarsosNoiseReducer();
                 logger.info("噪声抑制器初始化成功");
+            } else {
+                logger.info("噪声抑制已禁用");
+            }
+            
+            // 人声增强设置
+            if (enableVoiceEnhancement) {
+                logger.info("人声增强已启用，增益设置为: {}", voiceEnhancementGain);
             }
 
             // 检查SileroVadModel是否已注入
@@ -78,6 +91,9 @@ public class VadService {
     @PreDestroy
     public void cleanup() {
         logger.info("VAD服务资源已释放");
+        // 清理资源
+        sessionStates.clear();
+        sessionLocks.clear();
     }
 
     /**
@@ -92,6 +108,18 @@ public class VadService {
         private final LinkedList<byte[]> preBuffer = new LinkedList<>();
         private int preBufferSize = 0; // 当前缓冲区大小（字节）
         private final int maxPreBufferSize; // 最大缓冲区大小（字节）
+        
+        // 存储处理过的音频数据
+        private final List<byte[]> processedAudioData = new ArrayList<>();
+        
+        // 存储人声增强后的PCM数据
+        private final List<byte[]> enhancedAudioData = new ArrayList<>();
+        
+        // 存储原始PCM数据（解码后但未处理的）
+        private final List<byte[]> originalPcmData = new ArrayList<>();
+        
+        // 存储原始Opus数据
+        private final List<byte[]> opusAudioData = new ArrayList<>();
 
         public VadSessionState() {
             // 计算预缓冲区大小（16kHz, 16bit, mono = 32 bytes/ms）
@@ -174,8 +202,8 @@ public class VadService {
                 return;
             }
 
-            // 添加到预缓冲区
-            preBuffer.add(data);
+            // 添加到预缓冲区 - 使用clone避免外部修改
+            preBuffer.add(data.clone());
             preBufferSize += data.length;
 
             // 如果超出最大缓冲区大小，移除最旧的数据
@@ -209,6 +237,70 @@ public class VadService {
 
             return result;
         }
+        
+        /**
+         * 添加处理后的音频数据
+         */
+        public void addProcessedAudioData(byte[] processedPcm) {
+            if (processedPcm != null && processedPcm.length > 0) {
+                processedAudioData.add(processedPcm.clone());
+            }
+        }
+        
+        /**
+         * 添加人声增强后的PCM数据
+         */
+        public void addEnhancedAudioData(byte[] enhancedPcm) {
+            if (enhancedPcm != null && enhancedPcm.length > 0) {
+                enhancedAudioData.add(enhancedPcm.clone());
+            }
+        }
+        
+        /**
+         * 添加原始PCM音频数据（解码后未处理的）
+         */
+        public void addOriginalPcmData(byte[] originalPcm) {
+            if (originalPcm != null && originalPcm.length > 0) {
+                originalPcmData.add(originalPcm.clone());
+            }
+        }
+        
+        /**
+         * 添加原始Opus音频数据
+         */
+        public void addOpusAudioData(byte[] opusData) {
+            if (opusData != null && opusData.length > 0) {
+                opusAudioData.add(opusData.clone());
+            }
+        }
+
+        /**
+         * 获取所有处理过的音频数据
+         */
+        public List<byte[]> getProcessedAudioData() {
+            return new ArrayList<>(processedAudioData);
+        }
+        
+        /**
+         * 获取所有人声增强后的PCM数据
+         */
+        public List<byte[]> getEnhancedAudioData() {
+            return new ArrayList<>(enhancedAudioData);
+        }
+        
+        /**
+         * 获取所有原始PCM音频数据
+         */
+        public List<byte[]> getOriginalPcmData() {
+            return new ArrayList<>(originalPcmData);
+        }
+        
+        /**
+         * 获取所有原始Opus音频数据
+         */
+        public List<byte[]> getOpusAudioData() {
+            return new ArrayList<>(opusAudioData);
+        }
 
         /**
          * 重置状态
@@ -221,6 +313,10 @@ public class VadService {
             probabilities.clear();
             preBuffer.clear();
             preBufferSize = 0;
+            processedAudioData.clear();
+            enhancedAudioData.clear();
+            originalPcmData.clear();
+            opusAudioData.clear();
         }
     }
 
@@ -259,18 +355,36 @@ public class VadService {
             try {
                 // 确保会话状态已初始化
                 VadSessionState state = sessionStates.computeIfAbsent(sessionId, k -> new VadSessionState());
+                
+                // 保存原始Opus数据
+                state.addOpusAudioData(opusData);
 
                 // 解码Opus数据为PCM
                 byte[] pcmData = opusDecoder.opusToPcm(sessionId, opusData);
                 if (pcmData == null || pcmData.length == 0) {
                     return new VadResult(VadStatus.NO_SPEECH, null);
                 }
+                
+                // 保存原始PCM数据
+                state.addOriginalPcmData(pcmData);
 
-                // 添加到预缓冲区
-                state.addToPreBuffer(pcmData);
+                // 应用人声增强或噪声抑制
+                byte[] processedPcm;
+                if (enableVoiceEnhancement) {
+                    processedPcm = applyVoiceEnhancement(pcmData);
+                } else if (enableNoiseReduction) {
+                    processedPcm = applyNoiseReduction(sessionId, pcmData);
+                } else {
+                    processedPcm = pcmData;
+                }
+                
+                // 保存人声增强后的PCM数据
+                if (enableVoiceEnhancement) {
+                    state.addEnhancedAudioData(processedPcm);
+                }
 
-                // 应用噪声抑制
-                byte[] processedPcm = applyNoiseReduction(sessionId, pcmData);
+                // 添加到预缓冲区 - 使用处理后的PCM数据
+                state.addToPreBuffer(processedPcm);
 
                 // 计算音频能量
                 float[] samples = convertBytesToFloats(processedPcm);
@@ -290,7 +404,8 @@ public class VadService {
                 state.updateSilenceState(isSilence);
 
                 if (!state.isSpeaking() && isSpeech) {
-                    // 检测到语音开始
+                    // 检测到语音开始 - 清空之前的处理数据
+                    state.processedAudioData.clear();
                     state.setSpeaking(true);
                     logger.info("检测到语音开始 - SessionId: {}, 概率: {}, 能量: {}", sessionId, speechProb, currentEnergy);
 
@@ -300,12 +415,24 @@ public class VadService {
                     // 合并预缓冲区数据和当前数据
                     byte[] combinedData;
                     if (preBufferData.length > 0) {
-                        combinedData = new byte[preBufferData.length + processedPcm.length];
-                        System.arraycopy(preBufferData, 0, combinedData, 0, preBufferData.length);
-                        System.arraycopy(processedPcm, 0, combinedData, preBufferData.length, processedPcm.length);
-                        logger.debug("添加了{}字节的预缓冲音频 (约{}ms)", preBufferData.length, preBufferData.length / 32);
+                        // 注意：预缓冲区数据已经是处理过的，不需要再次处理
+                        // 避免重复处理导致的声音重复
+                        
+                        // 计算需要保留的预缓冲区数据长度（可能需要裁剪以避免重复）
+                        int preBufferToUse = Math.min(preBufferData.length, preBufferDuration * 16); // 只使用部分预缓冲区
+                        
+                        combinedData = new byte[preBufferToUse + processedPcm.length];
+                        System.arraycopy(preBufferData, preBufferData.length - preBufferToUse, combinedData, 0, preBufferToUse);
+                        System.arraycopy(processedPcm, 0, combinedData, preBufferToUse, processedPcm.length);
+                        
+                        logger.debug("添加了{}字节的预缓冲音频 (约{}ms)", preBufferToUse, preBufferToUse / 32);
+                        
+                        // 保存处理后的合并音频数据
+                        state.addProcessedAudioData(combinedData);
                     } else {
                         combinedData = processedPcm;
+                        // 保存处理后的音频数据
+                        state.addProcessedAudioData(processedPcm);
                     }
 
                     return new VadResult(VadStatus.SPEECH_START, combinedData);
@@ -319,10 +446,14 @@ public class VadService {
                         return new VadResult(VadStatus.SPEECH_END, processedPcm);
                     } else {
                         // 静音但未达到结束阈值，仍然视为语音继续
+                        // 保存处理后的音频数据
+                        state.addProcessedAudioData(processedPcm);
                         return new VadResult(VadStatus.SPEECH_CONTINUE, processedPcm);
                     }
                 } else if (state.isSpeaking()) {
                     // 语音继续
+                    // 保存处理后的音频数据
+                    state.addProcessedAudioData(processedPcm);
                     return new VadResult(VadStatus.SPEECH_CONTINUE, processedPcm);
                 } else {
                     // 没有检测到语音
@@ -332,6 +463,49 @@ public class VadService {
                 logger.error("处理音频数据失败 - SessionId: {}", sessionId, e);
                 return new VadResult(VadStatus.ERROR, null);
             }
+        }
+    }
+    
+    /**
+     * 应用人声增强
+     * 增强人声频率范围的能量
+     */
+    private byte[] applyVoiceEnhancement(byte[] pcmData) {
+        if (pcmData == null || pcmData.length < 2) {
+            return pcmData;
+        }
+        
+        try {
+            // 创建新的字节数组用于存储增强后的音频
+            byte[] enhancedPcm = new byte[pcmData.length];
+            
+            // 转换为short数组进行处理
+            ByteBuffer buffer = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN);
+            ByteBuffer outBuffer = ByteBuffer.wrap(enhancedPcm).order(ByteOrder.LITTLE_ENDIAN);
+            
+            int sampleCount = pcmData.length / 2;
+            
+            // 简单的增益应用 - 直接增强所有样本
+            for (int i = 0; i < sampleCount; i++) {
+                short sample = buffer.getShort();
+                
+                // 应用增益，但避免溢出
+                float enhanced = sample * voiceEnhancementGain;
+                
+                // 限制在16位范围内
+                if (enhanced > Short.MAX_VALUE) {
+                    enhanced = Short.MAX_VALUE;
+                } else if (enhanced < Short.MIN_VALUE) {
+                    enhanced = Short.MIN_VALUE;
+                }
+                
+                outBuffer.putShort((short) enhanced);
+            }
+            
+            return enhancedPcm;
+        } catch (Exception e) {
+            logger.error("应用人声增强失败: {}", e.getMessage());
+            return pcmData; // 出错时返回原始数据
         }
     }
 
@@ -408,7 +582,10 @@ public class VadService {
      * 应用噪声抑制
      */
     private byte[] applyNoiseReduction(String sessionId, byte[] pcmData) {
-        if (tarsosNoiseReducer != null && enableNoiseReduction) {
+        // 临时禁用噪声抑制
+        boolean temporarilyDisableNoiseReduction = true;
+        
+        if (tarsosNoiseReducer != null && enableNoiseReduction && !temporarilyDisableNoiseReduction) {
             return tarsosNoiseReducer.processAudio(sessionId, pcmData);
         }
         return pcmData;
@@ -480,6 +657,77 @@ public class VadService {
         }
     }
 
+    /**
+     * 获取处理过的音频数据
+     * @param sessionId 会话ID
+     * @return 处理过的PCM音频数据列表
+     */
+    public List<byte[]> getProcessedAudioData(String sessionId) {
+        Object lock = getSessionLock(sessionId);
+        synchronized (lock) {
+            VadSessionState state = sessionStates.get(sessionId);
+            if (state != null) {
+                return state.getProcessedAudioData();
+            }
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * 获取人声增强后的音频数据
+     * 这是主要的音频数据获取方法，用于替代原来的getRawAudioData
+     * @param sessionId 会话ID
+     * @return 人声增强后的PCM音频数据列表
+     */
+    public List<byte[]> getRawAudioData(String sessionId) {
+        Object lock = getSessionLock(sessionId);
+        synchronized (lock) {
+            VadSessionState state = sessionStates.get(sessionId);
+            if (state != null) {
+                if (enableVoiceEnhancement) {
+                    // 返回人声增强后的数据
+                    return state.getEnhancedAudioData();
+                } else {
+                    // 如果未启用人声增强，则返回原始PCM数据
+                    return state.getOriginalPcmData();
+                }
+            }
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * 获取原始PCM音频数据（解码后未处理的）
+     * @param sessionId 会话ID
+     * @return 原始PCM音频数据列表
+     */
+    public List<byte[]> getOriginalPcmData(String sessionId) {
+        Object lock = getSessionLock(sessionId);
+        synchronized (lock) {
+            VadSessionState state = sessionStates.get(sessionId);
+            if (state != null) {
+                return state.getOriginalPcmData();
+            }
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * 获取原始Opus音频数据
+     * @param sessionId 会话ID
+     * @return 原始Opus音频数据列表
+     */
+    public List<byte[]> getOpusAudioData(String sessionId) {
+        Object lock = getSessionLock(sessionId);
+        synchronized (lock) {
+            VadSessionState state = sessionStates.get(sessionId);
+            if (state != null) {
+                return state.getOpusAudioData();
+            }
+            return new ArrayList<>();
+        }
+    }
+
     // Getter和Setter方法
     public void setSpeechThreshold(float threshold) {
         if (threshold < 0.0f || threshold > 1.0f) {
@@ -501,6 +749,19 @@ public class VadService {
     public void setEnableNoiseReduction(boolean enable) {
         this.enableNoiseReduction = enable;
         logger.info("噪声抑制功能已{}", enable ? "启用" : "禁用");
+    }
+    
+    public void setEnableVoiceEnhancement(boolean enable) {
+        this.enableVoiceEnhancement = enable;
+        logger.info("人声增强功能已{}", enable ? "启用" : "禁用");
+    }
+    
+    public void setVoiceEnhancementGain(float gain) {
+        if (gain < 0.1f || gain > 5.0f) {
+            throw new IllegalArgumentException("人声增强增益必须在0.1到5.0之间");
+        }
+        this.voiceEnhancementGain = gain;
+        logger.info("人声增强增益已更新为: {}", gain);
     }
 
     /**

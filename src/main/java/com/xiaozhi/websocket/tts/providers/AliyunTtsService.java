@@ -23,12 +23,17 @@ import java.io.InputStream;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class AliyunTtsService implements TtsService {
     private static final Logger logger = LoggerFactory.getLogger(AliyunTtsService.class);
 
     private static final String PROVIDER_NAME = "aliyun";
+    // 添加重试次数常量
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+    // 添加重试间隔常量（毫秒）
+    private static final long RETRY_DELAY_MS = 1000;
 
     // 阿里云配置
     private final String apiKey;
@@ -85,7 +90,7 @@ public class AliyunTtsService implements TtsService {
             MultiModalConversation conv = new MultiModalConversation();
             MultiModalConversationResult result = conv.call(param);
             String audioUrl = result.getOutput().getAudio().getUrl();
-            String outPath = outputPath + File.separator + getAudioFileName();
+            String outPath = outputPath + getAudioFileName();
             File file = new File(outPath);
             // 下载音频文件到本地
             try (InputStream in = new URL(audioUrl).openStream();
@@ -118,31 +123,63 @@ public class AliyunTtsService implements TtsService {
         }
     }
 
+    // cosyvoice默认并发只有3个，所以需要增加一个重试机制
     private String ttsCosyvoice(String text) {
-        try {
-            com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisParam param =
-            com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisParam.builder()
-                            .apiKey(apiKey)
-                            .model("cosyvoice-v1")
-                            .voice(voiceName)
-                            .format(com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisAudioFormat.WAV_16000HZ_MONO_16BIT)
-                            .build();
-            com.alibaba.dashscope.audio.ttsv2.SpeechSynthesizer synthesizer = new com.alibaba.dashscope.audio.ttsv2.SpeechSynthesizer(param, null);
-            ByteBuffer audio = synthesizer.call(text);
-            String outPath = outputPath + File.separator + getAudioFileName();
-
-            File file = new File(outPath);
-            try (FileOutputStream fos = new FileOutputStream(file)) {
-                fos.write(audio.array());
-            } catch (IOException e) {
-                logger.error("语音合成aliyun -使用{}模型语音合成失败：",voiceName,e);
-                return StrUtil.EMPTY;
+        int attempts = 0;
+        while (attempts < MAX_RETRY_ATTEMPTS) {
+            try {
+                com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisParam param =
+                com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisParam.builder()
+                                .apiKey(apiKey)
+                                .model("cosyvoice-v1")
+                                .voice(voiceName)
+                                .format(com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisAudioFormat.WAV_16000HZ_MONO_16BIT)
+                                .build();
+                com.alibaba.dashscope.audio.ttsv2.SpeechSynthesizer synthesizer = new com.alibaba.dashscope.audio.ttsv2.SpeechSynthesizer(param, null);
+                ByteBuffer audio = synthesizer.call(text);
+                
+                // 检查返回的ByteBuffer是否为null
+                if (audio == null) {
+                    attempts++;
+                    if (attempts < MAX_RETRY_ATTEMPTS) {
+                        logger.warn("语音合成aliyun - 使用{}模型返回null，正在重试 ({}/{})", voiceName, attempts, MAX_RETRY_ATTEMPTS);
+                        // 等待一段时间后重试
+                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS);
+                        continue;
+                    } else {
+                        logger.error("语音合成aliyun - 使用{}模型多次返回null，放弃重试", voiceName);
+                        return StrUtil.EMPTY;
+                    }
+                }
+                
+                String outPath = outputPath + getAudioFileName();
+                File file = new File(outPath);
+                try (FileOutputStream fos = new FileOutputStream(file)) {
+                    fos.write(audio.array());
+                } catch (IOException e) {
+                    logger.error("语音合成aliyun -使用{}模型语音合成失败：", voiceName, e);
+                    return StrUtil.EMPTY;
+                }
+                return outPath;
+            } catch (Exception e) {
+                attempts++;
+                if (attempts < MAX_RETRY_ATTEMPTS) {
+                    logger.warn("语音合成aliyun - 使用{}模型失败，正在重试 ({}/{}): {}", voiceName, attempts, MAX_RETRY_ATTEMPTS, e.getMessage());
+                    try {
+                        // 等待一段时间后重试
+                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        logger.error("重试等待被中断", ie);
+                        return StrUtil.EMPTY;
+                    }
+                } else {
+                    logger.error("语音合成aliyun -使用{}模型语音合成失败，已达到最大重试次数：", voiceName, e);
+                    return StrUtil.EMPTY;
+                }
             }
-            return outPath;
-        } catch (Exception e) {
-            logger.error("语音合成aliyun -使用{}模型语音合成失败：",voiceName,e);
-            return StrUtil.EMPTY;
         }
+        return StrUtil.EMPTY;
     }
 
     public String ttsSambert(String text) {
@@ -156,7 +193,7 @@ public class AliyunTtsService implements TtsService {
                     .build();
             SpeechSynthesizer synthesizer = new SpeechSynthesizer();
             ByteBuffer audio = synthesizer.call(param);
-            String outPath = outputPath + File.separator + getAudioFileName();
+            String outPath = outputPath + getAudioFileName();
             File file = new File(outPath);
             try (FileOutputStream fos = new FileOutputStream(file)) {
                 fos.write(audio.array());

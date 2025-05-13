@@ -19,7 +19,7 @@ public interface ChatMemory {
      * @param roleId 角色ID
      * @param messageType 消息类型
      */
-    void addMessage(String deviceId, String sessionId, String sender, String content, Integer roleId, String messageType);
+    void addMessage(String deviceId, String sessionId, String sender, String content, Integer roleId, String messageType, String audioPath);
     
     /**
      * 获取历史消息

@@ -125,9 +125,9 @@ public class IotServiceTest {
         sysDevice.setDeviceId("94:a9:90:2b:de:fc");
         sysDevice.setRoleId(1);
         sysDevice.setModelId(1);
-        llmManager.chatStream(sysDevice, "查询当前屏幕的亮度", response -> {
-            logger.info("response: {}", response);
-        });
+        // llmManager.chatStream(sysDevice, "查询当前屏幕的亮度", response -> {
+        //     logger.info("response: {}", response);
+        // });
 //        llmManager.chatStream(sysDevice, "小智，再见", response -> {
 //            logger.info("response: {}", response);
 //        });

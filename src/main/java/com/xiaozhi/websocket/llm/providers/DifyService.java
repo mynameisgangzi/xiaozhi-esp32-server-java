@@ -1,5 +1,6 @@
 package com.xiaozhi.websocket.llm.providers;
 
+import com.xiaozhi.entity.SysMessage;
 import com.xiaozhi.websocket.llm.api.AbstractLlmService;
 import com.xiaozhi.websocket.llm.api.StreamResponseListener;
 import com.xiaozhi.websocket.llm.memory.ModelContext;
@@ -83,8 +84,7 @@ public class DifyService extends AbstractLlmService {
             @Override
             public void onMessageEnd(MessageEndEvent event) {
                 // 通知完成
-                streamListener.onComplete(fullResponse.toString());
-                streamListener.onFinal(messages, DifyService.this);
+                streamListener.onComplete(fullResponse.toString(), messages, DifyService.this, SysMessage.MESSAGE_TYPE_NORMAL);
             }
 
             @Override

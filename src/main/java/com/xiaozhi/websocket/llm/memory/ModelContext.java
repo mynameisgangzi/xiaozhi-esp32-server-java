@@ -14,6 +14,7 @@ public class ModelContext {
     private final String sessionId;
     private final Integer roleId;
     private final String systemMessage;
+    private final boolean useFunctionCall;// 是否启用函数调用
     private final ChatMemory chatMemory;
     private final FunctionSessionHolder functionSessionHolder;
 
@@ -23,13 +24,15 @@ public class ModelContext {
      * @param deviceId   设备ID
      * @param sessionId  会话ID
      * @param roleId     角色ID
+     * @param useFunctionCall     是否启用函数调用
      * @param chatMemory 聊天记忆
      */
-    public ModelContext(String deviceId, String sessionId, Integer roleId, ChatMemory chatMemory) {
+    public ModelContext(String deviceId, String sessionId, Integer roleId, boolean useFunctionCall, ChatMemory chatMemory) {
         this.deviceId = deviceId;
         this.sessionId = sessionId;
         this.roleId = roleId;
         this.chatMemory = chatMemory;
+        this.useFunctionCall = useFunctionCall;
         this.systemMessage = chatMemory.getSystemMessage(deviceId, roleId);
         this.functionSessionHolder = null;
     }
@@ -43,11 +46,12 @@ public class ModelContext {
      * @param chatMemory 聊天记忆
      * @param functionSessionHolder session绑定的function控制器
      */
-    public ModelContext(String deviceId, String sessionId, Integer roleId, ChatMemory chatMemory, FunctionSessionHolder functionSessionHolder) {
+    public ModelContext(String deviceId, String sessionId, Integer roleId, boolean useFunctionCall, ChatMemory chatMemory, FunctionSessionHolder functionSessionHolder) {
         this.deviceId = deviceId;
         this.sessionId = sessionId;
         this.roleId = roleId;
         this.chatMemory = chatMemory;
+        this.useFunctionCall = useFunctionCall;
         this.systemMessage = chatMemory.getSystemMessage(deviceId, roleId);
         this.functionSessionHolder = functionSessionHolder;
     }
@@ -79,6 +83,10 @@ public class ModelContext {
         return roleId;
     }
 
+    public boolean isUseFunctionCall() {
+        return useFunctionCall;
+    }
+
     /**
      * 获取系统消息
      * 
@@ -94,7 +102,7 @@ public class ModelContext {
      * @param message 用户消息
      */
     public void addUserMessage(String message) {
-        chatMemory.addMessage(deviceId, sessionId, "user", message, roleId, "NORMAL");
+        chatMemory.addMessage(deviceId, sessionId, "user", message, roleId, "NORMAL", null);
     }
 
     /**
@@ -103,7 +111,7 @@ public class ModelContext {
      * @param message AI消息
      */
     public void addAssistantMessage(String message) {
-        chatMemory.addMessage(deviceId, sessionId, "assistant", message, roleId, "NORMAL");
+        chatMemory.addMessage(deviceId, sessionId, "assistant", message, roleId, "NORMAL", null);
     }
 
     /**
@@ -113,8 +121,8 @@ public class ModelContext {
      * @param role 角色名称
      * @param messageType 消息类型
      */
-    public void addMessage(String message, String role, String messageType) {
-        chatMemory.addMessage(deviceId, sessionId, role, message, roleId, messageType);
+    public void addMessage(String message, String role, String messageType, String audioPath) {
+        chatMemory.addMessage(deviceId, sessionId, role, message, roleId, messageType, audioPath);
     }
 
     /**

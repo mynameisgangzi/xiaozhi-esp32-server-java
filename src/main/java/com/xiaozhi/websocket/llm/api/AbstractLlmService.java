@@ -47,6 +47,8 @@ public abstract class AbstractLlmService implements LlmService {
     protected final String appId;
     protected final String apiSecret;
 
+    protected boolean supportFunctionCall = false;
+
     /**
      * 构造函数
      * 

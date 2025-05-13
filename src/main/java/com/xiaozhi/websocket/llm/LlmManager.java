@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,9 +80,10 @@ public class LlmManager {
      * 
      * @param device  设备信息
      * @param message 用户消息
+     * @param useFunctionCall 是否使用函数调用
      * @return 模型回复
      */
-    public String chat(SysDevice device, String message) {
+    public String chat(SysDevice device, String message, boolean useFunctionCall) {
         try {
             String deviceId = device.getDeviceId();
             Integer configId = device.getModelId();
@@ -94,6 +96,7 @@ public class LlmManager {
                     deviceId,
                     device.getSessionId(),
                     device.getRoleId(),
+                    useFunctionCall,
                     chatMemory);
 
             // 调用LLM
@@ -110,9 +113,10 @@ public class LlmManager {
      * 
      * @param device         设备信息
      * @param message        用户消息
+     * @param useFunctionCall 是否使用函数调用
      * @param streamListener 流式响应监听器
      */
-    public void chatStream(SysDevice device, String message, StreamResponseListener streamListener) {
+    public void chatStream(SysDevice device, String message, boolean useFunctionCall, StreamResponseListener streamListener) {
         try {
             String deviceId = device.getDeviceId();
             Integer configId = device.getModelId();
@@ -127,6 +131,7 @@ public class LlmManager {
                     deviceId,
                     device.getSessionId(),
                     device.getRoleId(),
+                    useFunctionCall,
                     chatMemory,
                     functionSessionHolder);
 
@@ -144,9 +149,10 @@ public class LlmManager {
      * 
      * @param device       设备信息
      * @param message      用户消息
+     * @param useFunctionCall 是否使用函数调用
      * @param tokenHandler token处理函数，接收每个生成的token
      */
-    public void chatStream(SysDevice device, String message, Consumer<String> tokenHandler) {
+    public void chatStream(SysDevice device, String message, boolean useFunctionCall, Consumer<String> tokenHandler) {
         try {
             // 创建流式响应监听器
             StreamResponseListener streamListener = new StreamResponseListener() {
@@ -166,12 +172,8 @@ public class LlmManager {
                 }
 
                 @Override
-                public void onComplete(String completeResponse) {
-                }
-
-                @Override
-                public void onFinal(List<Map<String, Object>> allMessages, LlmService llmService) {
-
+                public void onComplete(String completeResponse, List<Map<String, Object>> allMessages,
+                                       LlmService llmService, String messageType) {
                 }
 
                 @Override
@@ -181,14 +183,14 @@ public class LlmManager {
             };
 
             // 调用现有的流式方法
-            chatStream(device, message, streamListener);
+            chatStream(device, message, useFunctionCall, streamListener);
 
         } catch (Exception e) {
             logger.error("处理流式查询时出错: {}", e.getMessage(), e);
         }
     }
 
-    public void chatStreamBySentence(SysDevice device, String message,
+    public void chatStreamBySentence(SysDevice device, String message, boolean useFunctionCall,
             TriConsumer<String, Boolean, Boolean> sentenceHandler) {
         try {
             final String deviceId = device.getDeviceId();
@@ -207,6 +209,7 @@ public class LlmManager {
                     deviceId,
                     sessionId,
                     roleId,
+                    useFunctionCall,
                     chatMemory,
                     functionSessionHolder);
 
@@ -305,7 +308,8 @@ public class LlmManager {
                 }
 
                 @Override
-                public void onComplete(String completeResponse) {
+                public void onComplete(String completeResponse, List<Map<String, Object>> hisMessages,
+                                       LlmService llmService, String messageType) {
                     // 检查该会话是否已完成处理
                     if (sessionCompleted.compareAndSet(false, true)) {
                         // 处理当前缓冲区剩余的内容（如果有）
@@ -326,19 +330,29 @@ public class LlmManager {
                             finalSentenceSent.set(true);
                         }
 
+                        Map<String, Object> responseMessage = new HashMap<>();
+                        responseMessage.put("role", "assistant");
+                        responseMessage.put("content", fullResponse);
+                        responseMessage.put("messageType", messageType);
+                        hisMessages.add(responseMessage);
+
+                        persistMessages(hisMessages, llmService);
                         // 记录处理的句子数量
                         logger.debug("总共处理了 {} 个句子", sentenceCount.get());
                     }
                 }
 
-                @Override
-                public void onFinal(List<Map<String, Object>> allMessages, LlmService llmService) {
+                void persistMessages(List<Map<String, Object>> allMessages, LlmService llmService) {
                     if (allMessages.isEmpty()) {
                         return;
                     }
                     List<Map<String, Object>> newMessages = new ArrayList<>();
                     // 如果本轮对话是function_all或mcp调用(最后一条信息的类型)，把用户的消息类型也修正为同样类型
                     String lastMessageType = allMessages.get(allMessages.size() - 1).get("messageType").toString();
+                    // 获取当前对话ID
+                    String dialogueId = (String) sessionManager.getSessionAttribute(modelContext.getSessionId(),
+                            "currentDialogueId");
+
                     // 遍历allMessages，将未保存的user及assistant入库
                     allMessages.forEach(message -> {
                         Object messageId = message.get("messageId");
@@ -351,7 +365,18 @@ public class LlmManager {
                                     : String.valueOf(message.get("content"));
                             if (!"tool".equals(role) && !messageContent.isEmpty()
                                     && !message.containsKey("messageId")) {// 非空未入库消息，则进行入库
-                                modelContext.addMessage(messageContent, role, lastMessageType);
+                                // 获取音频路径
+                                String audioPath = null;
+                                if (dialogueId != null) {
+                                    if ("user".equals(role)) {
+                                        audioPath = (String) sessionManager.getSessionAttribute(
+                                                modelContext.getSessionId(), "userAudioPath_" + dialogueId);
+                                    } else if ("assistant".equals(role)) {
+                                        audioPath = (String) sessionManager.getSessionAttribute(
+                                                modelContext.getSessionId(), "assistantAudioPath_" + dialogueId);
+                                    }
+                                }
+                                modelContext.addMessage(messageContent, role, lastMessageType, audioPath);
                                 // 数据入库后，给个id，避免下次再被入库
                                 message.put("messageId", 0);
                                 message.put("messageType", lastMessageType);
@@ -379,7 +404,7 @@ public class LlmManager {
             };
 
             // 调用现有的流式方法
-            chatStream(device, message, streamListener);
+            chatStream(device, message, useFunctionCall, streamListener);
 
         } catch (Exception e) {
             logger.error("处理流式查询时出错: {}", e.getMessage(), e);
