@@ -16,6 +16,7 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -172,6 +173,9 @@ public class ReviewDialogueService {
             prompt.append("，请读出这个单词和它的中文意思。");
             String promptMessage = prompt.toString();
             logger.info("生成第一个单词提示：{}", promptMessage);
+
+            //学第一个单词后,更新单词索引到1
+            reviewIndexMap.put(sessionId, 1);
             
             // 使用SentenceAudioService处理音频生成和发送
             sentenceAudioService.handleSentence(
@@ -254,7 +258,7 @@ public class ReviewDialogueService {
             int currentIndex = reviewIndexMap.getOrDefault(sessionId, 0);
             if (currentIndex >= tasks.size()) {
                 // 所有单词都已复习完
-                return null;
+                return new HashMap<String, String>();
             }
             
             // 获取下一个单词
@@ -265,7 +269,7 @@ public class ReviewDialogueService {
         })
         .subscribeOn(Schedulers.boundedElastic())
         .flatMap(nextWord -> {
-            if (nextWord == null) {
+            if (nextWord == null || nextWord.isEmpty()) {
                 // 所有单词都已复习完
                 String completionMessage = "恭喜你完成了所有单词的复习！";
                 
