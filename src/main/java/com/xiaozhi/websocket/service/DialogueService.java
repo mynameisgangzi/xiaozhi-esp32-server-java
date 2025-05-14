@@ -331,6 +331,27 @@ public class DialogueService {
                             .flatMap(text -> messageService.sendMessage(session, "stt", "final", text)
                                     .then(audioService.sendStart(session))
                                     .then(Mono.fromRunnable(() -> {
+                                        // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
+                                        // 先检查是否已经在复习模式中
+                                        if (reviewDialogueService.isInReviewMode(sessionId)) {
+                                            logger.info("用户已在复习模式中，发送下一个单词");
+                                            // 异步处理下一个单词，避免阻塞当前线程
+                                            CompletableFuture.runAsync(() -> {
+                                                reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig)
+                                                        .subscribe();
+                                            });
+                                            return; // 不再执行后续的大模型调用
+                                        }
+                                        // 判断是否需要进入复习模式
+                                        if (reviewDialogueService.containsLearningIntent(finalText)) {
+                                            logger.info("检测到学习意图，启动复习模式而不是调用大模型");
+                                            // 异步启动复习模式，避免阻塞当前线程
+                                            CompletableFuture.runAsync(() -> {
+                                                reviewDialogueService.tryEnterReviewMode(session,sessionId, finalText, device,ttsConfig)
+                                                        .subscribe();
+                                            });
+                                            return; // 不再执行后续的大模型调用
+                                        }
                                         // 使用句子切分处理响应
                                         llmManager.chatStreamBySentence(device, finalText, true,
                                                 (sentence, isFirst, isLast) -> {
