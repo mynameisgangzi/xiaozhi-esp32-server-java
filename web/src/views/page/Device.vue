@@ -273,9 +273,10 @@ export default {
         },
         {
           title: "设备类型",
-          dataIndex: "Type",
-          width: 100,
+          dataIndex: "type",
+          width: 150,
           align: "center",
+          ellipsis: true,
         },
         {
           title: "版本号",

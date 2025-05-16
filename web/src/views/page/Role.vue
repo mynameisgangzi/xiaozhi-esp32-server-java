@@ -129,9 +129,6 @@
                             {{ voice.label }}
                           </a-select-option>
                         </a-select>
-                        <a-button v-if="voiceLoadFailed" type="link" @click="retryLoadVoices" style="padding: 0">
-                          加载失败，点击重试
-                        </a-button>
                       </a-form-item>
                     </a-col>
                     <a-col :xl="12" :lg="12" :xs="24">
@@ -234,8 +231,6 @@ export default {
       aliyunVoices: [],
       volcengineVoices: [], // 新增火山引擎语音列表
       voiceLoading: false, // 语音列表加载状态
-      voiceLoadFailed: false, // 语音列表加载失败标志
-      voiceRetryCount: 0, // 语音列表加载重试次数
       selectedProvider: 'edge', // 默认使用Edge语音
       selectedGender: '', // 存储当前选择的性别
       activeTabKey: '1', // 当前激活的标签页
@@ -296,22 +291,19 @@ export default {
       ttsConfigs: [], // 存储TTS配置列表
       ttsConfigLoading: false, // TTS配置加载状态
       selectedTtsId: null, // 当前选择的TTS配置ID
-      // 缓存
-      cachedTtsConfigs: {}, // 缓存TTS配置
-      cachedVoices: {}, // 缓存语音列表
       promptTemplates: [], // 提示词模板列表
     }
   },
   mounted() {
     this.loadEdgeVoices();
-      
     this.loadAliyunVoices();
-        
     this.loadVolcengineVoices();
 
-    this.getData()
+    this.getData();
+
     // 初始化设置Edge默认TTS配置
     this.selectedTtsId = "edge_default";
+
     // 加载提示词模板列表
     this.loadTemplates();
   },
@@ -422,7 +414,6 @@ export default {
     // 处理语音提供商选择变化
     handleProviderChange(value) {
       this.selectedProvider = value;
-      this.voiceLoadFailed = false; // 重置加载失败标志
       
       // 清空当前语音名称和TTS配置，等待加载完成后再设置
       this.roleForm.setFieldsValue({
@@ -433,9 +424,6 @@ export default {
       // 清空当前TTS配置列表，避免显示上一个提供商的配置
       this.ttsConfigs = [];
       this.selectedTtsId = null;
-
-      // 根据提供商加载语音列表（使用缓存或重新加载）
-      this.loadVoicesByProvider(value);
 
       // 根据提供商设置TTS配置
       if (value === 'edge') {
@@ -448,25 +436,8 @@ export default {
           });
         });
       } else {
-        // 检查是否有缓存的TTS配置
-        if (this.cachedTtsConfigs[value]) {
-          // 使用缓存的配置
-          this.ttsConfigs = this.cachedTtsConfigs[value];
-          if (this.ttsConfigs.length > 0) {
-            this.selectedTtsId = this.ttsConfigs[0].configId;
-            this.$nextTick(() => {
-              this.roleForm.setFieldsValue({
-                ttsId: this.selectedTtsId
-              });
-            });
-          } else {
-            this.$message.warning(`没有找到可用的 ${value} 语音合成配置，请先在语音合成配置中添加`);
-            this.selectedTtsId = null;
-          }
-        } else {
-          // 加载TTS配置
-          this.loadTtsConfigs(value);
-        }
+        // 加载TTS配置
+        this.loadTtsConfigs(value);
       }
 
       // 重置性别选择
@@ -474,47 +445,15 @@ export default {
       this.roleForm.setFieldsValue({
         gender: ''
       });
-    },
-
-    // 根据提供商加载语音列表
-    loadVoicesByProvider(provider) {
-      // 检查是否有缓存的语音列表
-      if (this.cachedVoices[provider] && this.cachedVoices[provider].length > 0) {
-        // 使用缓存的语音列表
-        if (provider === 'edge') {
-          this.edgeVoices = this.cachedVoices[provider];
-        } else if (provider === 'aliyun') {
-          this.aliyunVoices = this.cachedVoices[provider];
-        } else if (provider === 'volcengine') {
-          this.volcengineVoices = this.cachedVoices[provider];
+      
+      // 在下一个渲染循环更新语音名称选择
+      this.$nextTick(() => {
+        if (this.filteredVoices && this.filteredVoices.length > 0) {
+          this.roleForm.setFieldsValue({
+            voiceName: this.filteredVoices[0].value
+          });
         }
-
-        // 在设置完语音列表后，更新默认语音选择
-        this.$nextTick(() => {
-          if (this.filteredVoices && this.filteredVoices.length > 0) {
-            this.roleForm.setFieldsValue({
-              voiceName: this.filteredVoices[0].value
-            });
-          }
-        });
-        return;
-      }
-
-      // 没有缓存，需要加载语音列表
-      this.voiceRetryCount = 0; // 重置重试计数
-      if (provider === 'edge' && this.edgeVoices.length === 0) {
-        this.loadEdgeVoices();
-      } else if (provider === 'aliyun' && this.aliyunVoices.length === 0) {
-        this.loadAliyunVoices();
-      } else if (provider === 'volcengine' && this.volcengineVoices.length === 0) {
-        this.loadVolcengineVoices();
-      }
-    },
-
-    // 重试加载语音列表
-    retryLoadVoices() {
-      this.voiceLoadFailed = false;
-      this.loadVoicesByProvider(this.selectedProvider);
+      });
     },
 
     // 处理TTS配置选择变化
@@ -548,9 +487,6 @@ export default {
         .then(res => {
           if (res.code === 200) {
             const configList = res.data.list || [];
-            
-            // 缓存配置
-            this.cachedTtsConfigs[provider] = configList;
             this.ttsConfigs = configList;
             
             // 如果有配置，默认选择第一个
@@ -626,12 +562,11 @@ export default {
     // 加载Edge语音列表
     loadEdgeVoices() {
       this.voiceLoading = true;
-      this.voiceLoadFailed = false;
       
       fetch('/static/assets/edgeVoicesList.json')
         .then(response => {
           if (!response.ok) {
-            throw new Error('网络请求失败');
+            throw new Error('加载Edge语音列表失败');
           }
           return response.json();
         })
@@ -659,11 +594,10 @@ export default {
               };
             });
 
-          // 缓存语音列表
-          this.cachedVoices['edge'] = voices;
+          // 保存语音列表
           this.edgeVoices = voices;
 
-          // 加载完语音列表后，设置默认语音
+          // 加载完语音列表后，如果当前选择的是Edge，设置默认语音
           this.$nextTick(() => {
             if (this.selectedProvider === 'edge' && this.edgeVoices.length > 0 && this.activeTabKey === '2') {
               this.roleForm.setFieldsValue({
@@ -673,115 +607,30 @@ export default {
           });
         })
         .catch(error => {
-          this.handleVoiceLoadError('edge');
+          this.$message.error('加载Edge语音列表失败，请刷新页面重试');
         })
         .finally(() => {
           this.voiceLoading = false;
         });
     },
 
-    // 加载阿里云语音列表
+    // 加载阿里云语音列表 - 从本地文件加载
     loadAliyunVoices() {
       this.voiceLoading = true;
-      this.voiceLoadFailed = false;
       
-      // 创建一个函数来解析HTML并提取语音数据
-      const parseAliyunCosyVoiceFromHTML = (htmlContent) => {
-        // 创建一个临时DOM元素来解析HTML
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        const voicesData = [];
-        // 查找id为5186fe1abb7ag的section元素
-        const sectionElement = doc.getElementById('033d50de1bb45');
-        if (sectionElement) {
-          // 查找section元素内的第一个tr元素
-          const trElements = Array.from(sectionElement.querySelectorAll('tr')).slice(1)
-
-          trElements.forEach(trElement => {
-            const childNodes = trElement.childNodes;
-            const label = childNodes[2].innerText
-            const value = childNodes[1].innerText
-            const gender = 'unknown';
-            const language = childNodes[5].innerText
-            voicesData.push({
-              label: label,
-              value: value,
-              gender: gender,
-              language: language
-            })
-          })
-        }
-        return voicesData;
-      };
-
-      // 创建一个函数来解析HTML并提取语音数据
-      const parseAliyunSambertFromHTML = (htmlContent) => {
-        // 创建一个临时DOM元素来解析HTML
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        const voicesData = [];
-        // 查找id为5186fe1abb7ag的section元素
-        const sectionElement = doc.getElementById('eca844883b0ox');
-        if (sectionElement) {
-          // 查找section元素内的第一个tr元素
-          const trElements = Array.from(sectionElement.querySelectorAll('tr')).slice(1)
-
-          trElements.forEach(trElement => {
-            const childNodes = trElement.childNodes;
-            const label = childNodes[1].innerText
-            const value = childNodes[0].innerText
-            const gender = childNodes[5].innerText
-            const type = childNodes[5].innerText
-            const language = childNodes[6].innerText
-            voicesData.push({
-              label: label,
-              value: value,
-              gender: gender.includes('女') ? 'female' : 'male',
-              type: type,
-              language: language
-            })
-          })
-        }
-        return voicesData;
-      };
-
-      const corsProxy = 'https://api.allorigins.win/raw?url=';
-      const aliyunDocsUrl = 'https://help.aliyun.com/zh/model-studio/text-to-speech';
-
-      fetch(`${corsProxy}${encodeURIComponent(aliyunDocsUrl)}`)
+      // 直接从本地文件加载阿里云语音列表
+      fetch('/static/assets/aliyunVoicesList.json')
         .then(response => {
           if (!response.ok) {
-            throw new Error('网络请求失败');
+            throw new Error('加载阿里云语音列表失败');
           }
-          return response.text();
+          return response.json();
         })
-        .then(htmlContent => {
-          // 解析HTML并提取语音数据
-          const cosyVoicesData = parseAliyunCosyVoiceFromHTML(htmlContent);
-          const sambertVoicesData = parseAliyunSambertFromHTML(htmlContent);
-          const qwenVoicesData = [
-            {label: 'Chelsie', value: 'Chelsie', gender: 'female', type: 'qwen'},
-            {label: 'Cherry', value: 'Cherry', gender: 'female', type: 'qwen'},
-            {label: 'Serena', value: 'Serena', gender: 'female', type: 'qwen'},
-            {label: 'Ethan', value: 'Ethan', gender: 'male', type: 'qwen'},
-          ]
-          const combinevoices = cosyVoicesData.concat(sambertVoicesData).concat(qwenVoicesData)
-
-          // 处理阿里云语音列表
-          const voices = combinevoices.map(voice => {
-            return {
-              label: voice.type ? `${voice.label} (${voice.type})` : voice.label,
-              value: voice.value,
-              gender: voice.gender.toLowerCase(),
-              provider: 'aliyun'
-            };
-          });
-
-          // 缓存语音列表
-          this.cachedVoices['aliyun'] = voices;
+        .then(voices => {
+          // 保存语音列表
           this.aliyunVoices = voices;
 
-          // 加载完语音列表后，设置默认语音
+          // 加载完语音列表后，如果当前选择的是阿里云，设置默认语音
           this.$nextTick(() => {
             if (this.selectedProvider === 'aliyun' && this.aliyunVoices.length > 0 && this.activeTabKey === '2') {
               this.roleForm.setFieldsValue({
@@ -791,80 +640,30 @@ export default {
           });
         })
         .catch(error => {
-          this.handleVoiceLoadError('aliyun');
+          this.$message.error('加载阿里云语音列表失败，请确认文件是否存在');
         })
         .finally(() => {
           this.voiceLoading = false;
         });
     },
 
-    // 加载火山引擎语音列表
+    // 加载火山引擎语音列表 - 从本地文件加载
     loadVolcengineVoices() {
       this.voiceLoading = true;
-      this.voiceLoadFailed = false;
       
-      // 创建一个函数来解析HTML并提取语音数据
-      const parseVolcengineVoicesFromHTML = (htmlContent) => {
-        // 创建一个临时DOM元素来解析HTML
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        const voicesData = [];
-        // 查找音色表格
-        const sectionElement = doc.getElementsByTagName('tbody')[0];
-
-        if (sectionElement) {
-          const trElements = Array.from(sectionElement.querySelectorAll('tr'))
-          trElements.forEach(trElement => {
-            let childNodes = trElement.childNodes;
-            // childNodes如果大于5，则说明第一个不是音色，是场景，需要去掉第一个元素
-            if (childNodes.length > 5) {
-              childNodes[0].remove();
-            }
-            const label = childNodes[0].innerText
-            const value = childNodes[1].innerText
-            const gender = childNodes[1].innerText.includes('female') ? 'female' : 'male';
-            const language = childNodes[3].innerText
-            voicesData.push({
-              name: label,
-              value: value,
-              gender: gender,
-              language: language
-            })
-          })
-        }
-        return voicesData;
-      };
-
-      const corsProxy = 'https://api.allorigins.win/raw?url=';
-      const volcengineDocsUrl = 'https://www.volcengine.com/docs/6561/1257544';
-
-      // 处理火山引擎语音列表
-      fetch(`${corsProxy}${encodeURIComponent(volcengineDocsUrl)}`)
+      // 直接从本地文件加载火山引擎语音列表
+      fetch('/static/assets/volcengineVoicesList.json')
         .then(response => {
           if (!response.ok) {
-            throw new Error('网络请求失败');
+            throw new Error('加载火山引擎语音列表失败');
           }
-          return response.text();
+          return response.json();
         })
-        .then(htmlContent => {
-          // 解析HTML并提取语音数据
-          const voicesData = parseVolcengineVoicesFromHTML(htmlContent);
-
-          // 处理火山引擎语音列表
-          const voices = voicesData.map(voice => {
-            return {
-              label: voice.name,
-              value: voice.value,
-              gender: voice.gender.toLowerCase(),
-              provider: 'volcengine'
-            };
-          });
-
-          // 缓存语音列表
-          this.cachedVoices['volcengine'] = voices;
+        .then(voices => {
+          // 保存语音列表
           this.volcengineVoices = voices;
 
-          // 加载完语音列表后，设置默认语音
+          // 加载完语音列表后，如果当前选择的是火山引擎，设置默认语音
           this.$nextTick(() => {
             if (this.selectedProvider === 'volcengine' && this.volcengineVoices.length > 0 && this.activeTabKey === '2') {
               this.roleForm.setFieldsValue({
@@ -874,40 +673,11 @@ export default {
           });
         })
         .catch(error => {
-          this.handleVoiceLoadError('volcengine');
+          this.$message.error('加载火山引擎语音列表失败，请确认文件是否存在');
         })
         .finally(() => {
           this.voiceLoading = false;
         });
-    },
-
-    // 处理语音加载错误
-    handleVoiceLoadError(provider) {
-      this.voiceRetryCount++;
-      
-      // 如果重试次数小于3，则自动重试
-      if (this.voiceRetryCount < 3) {
-        const retryDelay = 1000 * this.voiceRetryCount; // 逐渐增加重试延迟
-        setTimeout(() => {
-          if (provider === 'edge') {
-            this.loadEdgeVoices();
-          } else if (provider === 'aliyun') {
-            this.loadAliyunVoices();
-          } else if (provider === 'volcengine') {
-            this.loadVolcengineVoices();
-          }
-        }, retryDelay);
-      } else {
-        // 超过重试次数，显示错误
-        this.voiceLoadFailed = true;
-        const providerName =
-          provider === "edge"
-            ? "微软Edge"
-            : provider === "aliyun"
-              ? "阿里云"
-              : "火山引擎";
-        this.$message.error(`加载${providerName}语音列表失败，请点击重试按钮`);
-      }
     },
 
     // 提交表单
@@ -978,9 +748,6 @@ export default {
 
         // 设置语音提供商
         this.selectedProvider = record.provider || 'edge';
-        
-        // 确保相应的语音列表已加载
-        this.loadVoicesByProvider(this.selectedProvider);
 
         // 设置TTS配置ID
         if (this.selectedProvider === 'edge') {
@@ -988,27 +755,14 @@ export default {
           this.ttsConfigs = [];
           this.$nextTick(() => {
             roleForm.setFieldsValue({
-              ttsId: this.selectedTtsId
+              ttsId: 'edge_default'
             });
           });
         } else {
-          // 检查是否有缓存的TTS配置
-          if (this.cachedTtsConfigs[this.selectedProvider]) {
-            // 使用缓存的配置
-            this.ttsConfigs = this.cachedTtsConfigs[this.selectedProvider];
-            this.selectedTtsId = record.ttsId;
-            this.$nextTick(() => {
-              roleForm.setFieldsValue({
-                ttsId: this.selectedTtsId
-              });
-            });
-          } else {
-            // 加载TTS配置
-            this.ttsConfigLoading = true;
-            this.loadTtsConfigs(this.selectedProvider);
-            // 设置要在加载完成后选中的TTS配置ID
-            this.selectedTtsId = record.ttsId;
-          }
+          // 加载TTS配置
+          this.loadTtsConfigs(this.selectedProvider);
+          // 设置要在加载完成后选中的TTS配置ID
+          this.selectedTtsId = record.ttsId;
         }
 
         // 设置当前选择的性别，以便正确筛选语音
@@ -1059,7 +813,6 @@ export default {
       this.audioUrl = '';
       this.selectedGender = ''; // 重置性别选择
       this.selectedProvider = 'edge'; // 重置为默认语音提供商
-      this.voiceLoadFailed = false; // 重置语音加载失败标志
       
       // 清空TTS配置
       this.ttsConfigs = [];

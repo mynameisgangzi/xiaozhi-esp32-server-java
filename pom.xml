@@ -10,7 +10,7 @@
 
     <groupId>com.xiaozhi.server</groupId>
     <artifactId>xiaozhi.server</artifactId>
-    <version>2.7.52</version>
+    <version>2.7.56</version>
     <name>xiaozhi-server</name>
     <description></description>
 

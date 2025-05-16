@@ -60,6 +60,7 @@ public abstract class AbstractOpenAiLlmService extends AbstractLlmService {
                 .url(endpoint + "/chat/completions")
                 .post(RequestBody.create(jsonBody, JSON))
                 .addHeader("Authorization", "Bearer " + apiKey)
+                .addHeader("Content-Type", "application/json")
                 .build();
 
         // 发送请求

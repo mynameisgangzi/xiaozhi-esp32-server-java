@@ -113,6 +113,7 @@ DROP TABLE IF EXISTS `xiaozhi`.`sys_code`;
 CREATE TABLE `xiaozhi`.`sys_code` (
   `codeId` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `code` varchar(100) NOT NULL COMMENT '验证码',
+  `type` varchar(50) DEFAULT NULL COMMENT '设备类型',
   `email` varchar(100) DEFAULT NULL COMMENT '邮箱',
   `deviceId` varchar(30) DEFAULT NULL COMMENT '设备ID',
   `sessionId` varchar(100) DEFAULT NULL COMMENT 'sessionID',

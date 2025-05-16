@@ -9,7 +9,7 @@ dist/
 avatar/
 # 忽略特定格式的文件
 audio/
-vosk*
+vosk-model*
 *.zip
 *.log
 *.tmp
@@ -31,3 +31,4 @@ vosk*
 application-local.properties
 
 *Stream*
+.vscode/
