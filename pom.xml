@@ -182,6 +182,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.8.32</version>
+        </dependency>
+
         <!-- RestTemplate -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
