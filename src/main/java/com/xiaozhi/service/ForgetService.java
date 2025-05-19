@@ -12,6 +12,7 @@ import com.xiaozhi.entity.dto.TaskDTO;
 import com.xiaozhi.entity.dto.UserDTO;
 import com.xiaozhi.entity.dto.WordDTO;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -26,8 +27,6 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class ForgetService {
 
-    private static final String API = "http://127.0.0.1:24914";
-
     private static final String TOKEN_KEY = "forget:token:";
 
     private static final String TASK_KEY = "forget:task:";
@@ -38,6 +37,9 @@ public class ForgetService {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    @Value("${forget.url}")
+    private String API;
 
     /**
      * 检查抗遗忘任务 | 如果第一次检查则获取所有任务,第一次之后就拉取最新的任务
