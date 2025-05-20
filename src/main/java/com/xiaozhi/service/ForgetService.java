@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 抗遗忘任务
@@ -76,13 +77,32 @@ public class ForgetService {
         List<TaskDTO> tasks = forgetHttp.checkForgetTaskHttp(account, token);
         log.info("用户:{}, 检查全部抗遗忘任务数量:{}", account, tasks.size());
 
-        // TODO: 待合并已保存的任务和最新的任务列表
+        // 合并任务列表
+        List<TaskDTO> oldTasks = taskRedisMapper.getTasks(account, date);
+        Set<Long> oldTaskSet = oldTasks.stream().map(TaskDTO::getTaskId).collect(Collectors.toSet());
+
+        // 待更新单词列表的任务
+        List<TaskDTO> newTasks = new ArrayList<>();
+
+        tasks.forEach(task -> {
+            if (!oldTaskSet.contains(task.getTaskId())) {
+                oldTasks.add(task);
+                if (task.getFinished() == 0) {
+                    newTasks.add(task);
+                }
+            }
+        });
+
+        // 保存最新任务
+        taskRedisMapper.batchSaveTasks(account, date, oldTasks);
 
         // 异步更新任务的单词列表
-        ThreadUtil.execute(() -> saveTaskWordList(account, token, date, tasks));
+        if (CollUtil.isNotEmpty(newTasks)) {
+            ThreadUtil.execute(() -> saveTaskWordList(account, token, date, newTasks));
+        }
 
         // 返回待完成的任务数量
-        return tasks.size();
+        return Math.toIntExact(oldTasks.stream().filter(task -> task.getFinished() == 0).count());
     }
 
     /**
@@ -104,21 +124,31 @@ public class ForgetService {
      * @param data       发音数据
      * @param fileSuffix 文件后缀
      */
-    public void submitWordVoice(String account, byte[] data, String fileSuffix) {
+    public boolean submitWordVoice(String account, byte[] data, String fileSuffix) {
         // 获取当前用户正在学习的单词
         String date = LocalDate.now().toString();
         WordDTO currentWord = wordRedisMapper.getCurrentWord(account, date);
 
         if (currentWord == null || data == null || data.length == 0) {
             // 如果当前学习单词查询失败获取发音数据不存在,则直接返回
-            return;
+            return false;
         }
 
         // 提交发音数据进行评估
         String token = getToken(account);
 
+        // 是否任务的最后一个单词
+        boolean lastFlag = currentWord.getLastWord() == 1;
+        if (lastFlag) {
+            // 更新任务状态为完成
+            taskRedisMapper.updateTaskFinsh(account, date, currentWord.getTaskId());
+        }
+
         // 异步提交评分
         ThreadUtil.execute(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
+
+        // 返回是否最后一个单词
+        return lastFlag;
     }
 
     /**
