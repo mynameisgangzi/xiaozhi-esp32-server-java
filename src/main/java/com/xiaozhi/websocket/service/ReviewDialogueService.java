@@ -3,6 +3,7 @@ package com.xiaozhi.websocket.service;
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
 import com.xiaozhi.service.ReviewService;
+import com.xiaozhi.websocket.llm.LlmManager;
 import com.xiaozhi.websocket.stt.SttService;
 import com.xiaozhi.websocket.stt.factory.SttServiceFactory;
 import com.xiaozhi.websocket.tts.TtsService;
@@ -34,6 +35,9 @@ public class ReviewDialogueService {
     private static final Pattern LEARN_INTENT_PATTERN = Pattern.compile(
             ".*?(学习|复习|练习|单词|英语|课程|作业|教材|朗读).*?", 
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    @Autowired
+    private LlmManager llmManager;
 
     @Autowired
     private ReviewService reviewService;
@@ -70,7 +74,7 @@ public class ReviewDialogueService {
             return Mono.just(false);
         }
 
-        String studentAccount = "XP114841";device.getStudentAccount();
+        String studentAccount = device.getStudentAccount();
         
         if (studentAccount == null || studentAccount.isEmpty()) {
             logger.warn("无法切换到复习模式：设备未绑定用户");
@@ -230,7 +234,6 @@ public class ReviewDialogueService {
             sessionManager.getCachedConfig(device.getTtsId()) : null;
         
         String message = "已退出复习模式，你可以继续与我对话。";
-        
         // 使用SentenceAudioService发送退出消息
         return sentenceAudioService.sendSingleMessage(
                 session,
@@ -238,6 +241,20 @@ public class ReviewDialogueService {
                 message,
                 ttsConfig,
                 device.getVoiceName());
+        // 调用大模型回复学生
+//        String finalText = "学生完成了抗遗忘训练，已退出复习模式，请你扮演老师的角色用简洁的话给予学生鼓励和肯定";
+//        llmManager.chatStreamBySentence(device, finalText, true,
+//                (sentence, isFirst, isLast) -> {
+//                    sentenceAudioService.handleSentence(
+//                            session,
+//                            sessionId,
+//                            finalText,
+//                            isFirst,
+//                            isLast,
+//                            ttsConfig,
+//                            device.getVoiceName()); // 传递对话ID
+//                });
+//        return Mono.empty();
     }
     
     /**
@@ -271,7 +288,7 @@ public class ReviewDialogueService {
         .flatMap(nextWord -> {
             if (nextWord == null || nextWord.isEmpty()) {
                 // 所有单词都已复习完
-                String completionMessage = "恭喜你完成了所有单词的复习！";
+                String completionMessage = "恭喜你完成了所有单词的复习！你太棒了！";
                 
                 // 使用SentenceAudioService发送完成消息
                 return sentenceAudioService.sendSingleMessage(
@@ -287,7 +304,7 @@ public class ReviewDialogueService {
             String word = nextWord.get("word");
 
             StringBuilder prompt = new StringBuilder();
-            prompt.append("下一个：").append(word);
+            prompt.append(word);
 
             String promptMessage = prompt.toString();
             logger.info("生成下一个单词提示：{}", promptMessage);

@@ -328,7 +328,8 @@ public class DialogueService {
                         return finalText;
                     })
                             .subscribeOn(Schedulers.boundedElastic())
-                            .flatMap(text -> messageService.sendMessage(session, "stt", "final", text)
+                            //不回显用户说的话
+                            .flatMap(text -> messageService.sendMessage(session, "stt", "final", "")
                                     .then(audioService.sendStart(session))
                                     .then(Mono.fromRunnable(() -> {
                                         // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
