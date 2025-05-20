@@ -1,7 +1,10 @@
 package com.xiaozhi.websocket.service;
 
+import cn.hutool.core.lang.Pair;
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
+import com.xiaozhi.entity.dto.WordDTO;
+import com.xiaozhi.service.ForgetService;
 import com.xiaozhi.service.ReviewService;
 import com.xiaozhi.websocket.llm.LlmManager;
 import com.xiaozhi.websocket.stt.SttService;
@@ -47,6 +50,9 @@ public class ReviewDialogueService {
     
     @Autowired
     private SentenceAudioService sentenceAudioService;
+
+    @Autowired
+    private ForgetService forgetService;
     
     // 保存当前复习进度
     private final Map<String, Integer> reviewIndexMap = new ConcurrentHashMap<>();
@@ -80,63 +86,110 @@ public class ReviewDialogueService {
             logger.warn("无法切换到复习模式：设备未绑定用户");
             return Mono.just(false);
         }
-        
-        // 获取用户的复习任务
-        return Mono.<List<Map<String, String>>>fromCallable(() -> reviewService.getReviewTasks(studentAccount, null))
-            .subscribeOn(Schedulers.boundedElastic())
-            .flatMap(tasks -> Mono.<Boolean>defer(() -> {
-                if (tasks == null || tasks.isEmpty()) {
-                    // 没有复习任务
+        // 进入复习模型
+        return Mono.fromCallable(() -> {
+            // 检查更新抗遗忘任务,并返回待完成的任务数
+            return forgetService.checkForgetTask(studentAccount);
+        }).subscribeOn(Schedulers.boundedElastic())
+            .flatMap(taskNumber -> Mono.defer(() -> {
+                if (taskNumber == 0) {
                     String noTaskMessage = "今天没有复习任务";
-                    
-                    // 使用SentenceAudioService发送消息
-//                    SysConfig ttsConfig = null;
-//                    if (device.getTtsId() != null) {
-//                        ttsConfig = sessionManager.getCachedConfig(device.getTtsId());
-//                    }
                     logger.info("device.getVoiceName()=={}",device.getVoiceName());
                     return sentenceAudioService.sendSingleMessage(
-                            session,
-                            sessionId,
-                            noTaskMessage, 
-                            ttsConfig, 
-                            device.getVoiceName())
-                        .thenReturn(false);
+                                    session,
+                                    sessionId,
+                                    noTaskMessage,
+                                    ttsConfig,
+                                    device.getVoiceName())
+                            .thenReturn(false);
                 }
-                
                 // 设置为复习模式
                 logger.info("设置为复习模式");
                 reviewService.setReviewMode(sessionId, studentAccount);
-                reviewIndexMap.put(sessionId, 0);
-                String taskInfo = "我们现在开始复习吧";
-                
+                String taskInfo = String.format("今天有%d个任务待复习,我们现在开始复习吧", taskNumber);
                 // 使用SentenceAudioService发送复习模式开始提示
-                
-
                 logger.info("发送复习模式开始提示");
                 return sentenceAudioService.sendSingleMessage(
-                        session,
-                        sessionId,
-                        taskInfo, 
-                        ttsConfig, 
-                        device.getVoiceName())
-                    .then(startReviewSession(session, studentAccount))
-                    .thenReturn(true);
-            }))
-            .onErrorResume(e -> {
-                logger.error("切换到复习模式失败", e);
-                String errorMessage = "切换到复习模式失败，请稍后再试。";
-                
-                // 使用SentenceAudioService发送错误消息
+                                session,
+                                sessionId,
+                                taskInfo,
+                                ttsConfig,
+                                device.getVoiceName())
+                        .then(startReviewSession(session, studentAccount))
+                        .thenReturn(true);
+            })).onErrorResume(e -> {
+                    logger.error("切换到复习模式失败", e);
+                    String errorMessage = "切换到复习模式失败，请稍后再试。";
 
-                return sentenceAudioService.sendSingleMessage(
-                        session,
-                        sessionId,
-                        errorMessage, 
-                        ttsConfig, 
-                        device.getVoiceName())
-                    .thenReturn(false);
-            });
+                    // 使用SentenceAudioService发送错误消息
+
+                    return sentenceAudioService.sendSingleMessage(
+                                    session,
+                                    sessionId,
+                                    errorMessage,
+                                    ttsConfig,
+                                    device.getVoiceName())
+                            .thenReturn(false);
+                });
+
+
+        
+//        // 获取用户的复习任务
+//        return Mono.<List<Map<String, String>>>fromCallable(() -> reviewService.getReviewTasks(studentAccount, null))
+//            .subscribeOn(Schedulers.boundedElastic())
+//            .flatMap(tasks -> Mono.<Boolean>defer(() -> {
+//                if (tasks == null || tasks.isEmpty()) {
+//                    // 没有复习任务
+//                    String noTaskMessage = "今天没有复习任务";
+//
+//                    // 使用SentenceAudioService发送消息
+////                    SysConfig ttsConfig = null;
+////                    if (device.getTtsId() != null) {
+////                        ttsConfig = sessionManager.getCachedConfig(device.getTtsId());
+////                    }
+//                    logger.info("device.getVoiceName()=={}",device.getVoiceName());
+//                    return sentenceAudioService.sendSingleMessage(
+//                            session,
+//                            sessionId,
+//                            noTaskMessage,
+//                            ttsConfig,
+//                            device.getVoiceName())
+//                        .thenReturn(false);
+//                }
+//
+//                // 设置为复习模式
+//                logger.info("设置为复习模式");
+//                reviewService.setReviewMode(sessionId, studentAccount);
+//                reviewIndexMap.put(sessionId, 0);
+//                String taskInfo = "我们现在开始复习吧";
+//
+//                // 使用SentenceAudioService发送复习模式开始提示
+//
+//
+//                logger.info("发送复习模式开始提示");
+//                return sentenceAudioService.sendSingleMessage(
+//                        session,
+//                        sessionId,
+//                        taskInfo,
+//                        ttsConfig,
+//                        device.getVoiceName())
+//                    .then(startReviewSession(session, studentAccount))
+//                    .thenReturn(true);
+//            }))
+//            .onErrorResume(e -> {
+//                logger.error("切换到复习模式失败", e);
+//                String errorMessage = "切换到复习模式失败，请稍后再试。";
+//
+//                // 使用SentenceAudioService发送错误消息
+//
+//                return sentenceAudioService.sendSingleMessage(
+//                        session,
+//                        sessionId,
+//                        errorMessage,
+//                        ttsConfig,
+//                        device.getVoiceName())
+//                    .thenReturn(false);
+//            });
     }
     
     /**
@@ -157,30 +210,23 @@ public class ReviewDialogueService {
         
         // 获取当前复习项
         return Mono.fromCallable(() -> {
-            List<Map<String, String>> tasks = reviewService.getReviewTasks(studentAccount, null);
-            if (tasks == null || tasks.isEmpty()) {
-                return null;
-            }
-            return tasks.get(0);
-        })
-        .subscribeOn(Schedulers.boundedElastic())
-        .flatMap(firstItem -> {
-            if (firstItem == null) {
+            // 获取下一个单词
+            WordDTO nextWord = forgetService.getNextWord(studentAccount);
+            if (nextWord == null) {
+                String errorMsg = "获取复习单词失败,请退出重试";
+                sentenceAudioService.sendSingleMessage(
+                        session,
+                        sessionId,
+                        errorMsg,
+                        ttsConfig,
+                        device.getVoiceName());
                 return Mono.empty();
             }
-            
-            // 提示第一个单词
-            String word = firstItem.get("word");
-            
-            StringBuilder prompt = new StringBuilder();
-            prompt.append("第一个单词是：").append(word);
-            prompt.append("，请读出这个单词和它的中文意思。");
-            String promptMessage = prompt.toString();
+            String word = nextWord.getWord();
+            String promptMessage = "第一个单词是：" + word +
+                    "，请读出这个单词和它的中文意思。";
             logger.info("生成第一个单词提示：{}", promptMessage);
 
-            //学第一个单词后,更新单词索引到1
-            reviewIndexMap.put(sessionId, 1);
-            
             // 使用SentenceAudioService处理音频生成和发送
             sentenceAudioService.handleSentence(
                     session,
@@ -193,7 +239,9 @@ public class ReviewDialogueService {
 
             // SentenceAudioService会异步处理音频生成和发送，所以这里可以直接返回
             return Mono.empty();
-        });
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(item -> Mono.empty());
     }
     
     /**
@@ -260,33 +308,31 @@ public class ReviewDialogueService {
     /**
      * 处理下一个单词
      */
-    public Mono<Void> processNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig) {
+    public Mono<Void> processNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig, boolean isNewTask) {
 
         String studentAccount = device.getStudentAccount();
-        
+
+        if (isNewTask) {
+            // 上一个任务已完成,鼓励用户
+            Pair<Integer, Integer> taskInfo = forgetService.getTaskNumber(studentAccount);
+            Integer noFinshTask = taskInfo.getValue();
+            if (noFinshTask > 0) {
+                String taskFinshMessage = "你太棒了,还有最后" + noFinshTask + "个复习任务,继续加油!";
+                return sentenceAudioService.sendSingleMessage(
+                                session,
+                                sessionId,
+                                taskFinshMessage,
+                                ttsConfig,
+                                device.getVoiceName())
+                        .then(exitReviewMode(session));
+            }
+        }
+
         // 获取当前复习项
-        return Mono.fromCallable(() -> {
-            List<Map<String, String>> tasks = reviewService.getReviewTasks(studentAccount, null);
-            if (tasks == null || tasks.isEmpty()) {
-                return null;
-            }
-            
-            // 获取当前索引
-            int currentIndex = reviewIndexMap.getOrDefault(sessionId, 0);
-            if (currentIndex >= tasks.size()) {
-                // 所有单词都已复习完
-                return new HashMap<String, String>();
-            }
-            
-            // 获取下一个单词
-            Map<String, String> nextWord = tasks.get(currentIndex);
-            // 更新索引
-            reviewIndexMap.put(sessionId, currentIndex + 1);
-            return nextWord;
-        })
+        return Mono.fromCallable(() -> forgetService.getNextWord(studentAccount))
         .subscribeOn(Schedulers.boundedElastic())
         .flatMap(nextWord -> {
-            if (nextWord == null || nextWord.isEmpty()) {
+            if (nextWord == null) {
                 // 所有单词都已复习完
                 String completionMessage = "恭喜你完成了所有单词的复习！你太棒了！";
                 
@@ -301,7 +347,7 @@ public class ReviewDialogueService {
             }
             
             // 提示下一个单词
-            String word = nextWord.get("word");
+            String word = nextWord.getWord();
 
             StringBuilder prompt = new StringBuilder();
             prompt.append(word);

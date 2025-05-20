@@ -2,6 +2,7 @@ package com.xiaozhi.service;
 
 
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.lang.Pair;
 import cn.hutool.core.thread.ThreadUtil;
 import cn.hutool.core.util.StrUtil;
 import com.xiaozhi.entity.dto.TaskDTO;
@@ -14,6 +15,7 @@ import com.xiaozhi.mapper.redis.WordRedisMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.util.*;
@@ -145,10 +147,48 @@ public class ForgetService {
         }
 
         // 异步提交评分
-        ThreadUtil.execute(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
+        Mono.fromRunnable(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
 
         // 返回是否最后一个单词
         return lastFlag;
+    }
+
+    /**
+     * 获取用户任务数量信息
+     *
+     * @param account 账号
+     * @return key - 任务总数 | value - 待完成任务数量
+     */
+    public Pair<Integer, Integer> getTaskNumber(String account) {
+        String date = LocalDate.now().toString();
+        List<TaskDTO> oldTasks = taskRedisMapper.getTasks(account, date);
+        int noFinshTaskNumber = Math.toIntExact(oldTasks.stream().filter(task -> task.getFinished() == 0).count());
+        return Pair.of(oldTasks.size(), noFinshTaskNumber);
+    }
+
+    /**
+     * 暂停用户语音数据
+     *
+     * @param account   账号
+     * @param finalText 文本
+     * @param data      data
+     */
+    public void saveUserPcmData(String account, String finalText, byte[] data) {
+        wordRedisMapper.savePcm(account, finalText, data);
+    }
+
+    /**
+     * 获取用户暂存的语音
+     *
+     * @param account   账号
+     * @param finalText 文本
+     * @return 语音数据
+     */
+    public byte[] getUserPcmData(String account, String finalText) {
+        byte[] pcm = wordRedisMapper.getPcm(account, finalText);
+        // 取出之后删除暂存的语音数据
+        wordRedisMapper.delPcm(account, finalText);
+        return pcm;
     }
 
     /**

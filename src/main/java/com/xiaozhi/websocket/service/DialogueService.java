@@ -2,6 +2,7 @@ package com.xiaozhi.websocket.service;
 
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
+import com.xiaozhi.service.ForgetService;
 import com.xiaozhi.utils.AudioUtils;
 import com.xiaozhi.utils.EmojiUtils;
 import com.xiaozhi.utils.EmojiUtils.EmoSentence;
@@ -77,6 +78,8 @@ public class DialogueService {
     private final Map<String, StringBuilder> responses = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArrayList<Sentence>> sentenceQueue = new ConcurrentHashMap<>();
     private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
+    @Autowired
+    private ForgetService forgetService;
 
     /**
      * 句子对象，用于跟踪每个句子的处理状态
@@ -320,6 +323,8 @@ public class DialogueService {
                                 userAudioPath = AudioUtils.AUDIO_PATH + AudioUtils.saveAsWav(fullPcmData);
                                 sessionManager.setSessionAttribute(sessionId, "userAudioPath_" + dialogueId,
                                         userAudioPath);
+                                // 暂存语音数据
+                                forgetService.saveUserPcmData(device.getStudentAccount(), finalText, fullPcmData);
                             } catch (Exception e) {
                                 logger.error("保存用户音频失败: {}", e.getMessage(), e);
                             }
@@ -338,7 +343,12 @@ public class DialogueService {
                                             logger.info("用户已在复习模式中，发送下一个单词");
                                             // 异步处理下一个单词，避免阻塞当前线程
                                             CompletableFuture.runAsync(() -> {
-                                                reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig)
+                                                String account = device.getStudentAccount();
+                                                byte[] data = forgetService.getUserPcmData(account, finalText);
+                                                // 提交评分
+                                                boolean lastWord = forgetService.submitWordVoice(account, data, "wav");
+                                                // 如果是当前任务的最后单词,则鼓励用户
+                                                reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig, lastWord)
                                                         .subscribe();
                                             });
                                             return; // 不再执行后续的大模型调用

@@ -24,6 +24,8 @@ public class WordRedisMapper {
     // 用户当前所学单词 key
     private static final String WORD_CURRENT_KEY = "forget:word_current:%s:%s";
 
+    private static final String PCM_KEY = "forget:pcm:%s:%s";
+
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
@@ -83,6 +85,20 @@ public class WordRedisMapper {
         return (WordDTO) redisTemplate.opsForValue().get(key);
     }
 
+    public void savePcm(String account, String finalText, byte[] pcm) {
+        String key = getPcmKey(account, finalText);
+        redisTemplate.opsForValue().set(key, pcm);
+    }
+
+    public byte[] getPcm(String account, String finalText) {
+        String key = getPcmKey(account, finalText);
+        return (byte[]) redisTemplate.opsForValue().get(key);
+    }
+
+    public void delPcm(String account, String finalText) {
+        redisTemplate.delete(getPcmKey(account, finalText));
+    }
+
     /**
      * 获取缓存key
      *
@@ -114,6 +130,17 @@ public class WordRedisMapper {
      */
     private String getCurrentWordRedisKey(String account, String date) {
         return String.format(WORD_CURRENT_KEY, account, date);
+    }
+
+    /**
+     * 获取pcm data key
+     *
+     * @param account   账号
+     * @param finalText 字符串
+     * @return String
+     */
+    private String getPcmKey(String account, String finalText) {
+        return String.format(PCM_KEY, account, finalText);
     }
 
 }
