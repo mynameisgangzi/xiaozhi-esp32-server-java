@@ -126,4 +126,35 @@ public class ForgetHttp {
         return Optional.ofNullable(words).orElse(new ArrayList<>());
     }
 
+    /**
+     * 单词发音提交评分
+     *
+     * @param account 账号
+     * @param token   token
+     * @param word    单词
+     * @param data    发音数据
+     */
+    public void submitWordVoice(String account, String token, WordDTO word, byte[] data, String fileSuffix) {
+        try {
+            // 提交评分
+            String submitUrl = forgetApi + "/forgetApp/study/individualRecordingReports";
+            HttpRequest post = HttpUtil.createPost(submitUrl);
+            post.header("Authorization", token);
+            post.form("file", data, UUID.randomUUID() + "." + fileSuffix);
+            post.form("detailId", word.getDetailId());
+            post.form("calendarId", word.getCalendarId());
+            post.form("taskId", word.getTaskId());
+            post.form("vocabularyId", word.getVocabularyId());
+            post.form("word", word.getWord());
+            post.form("lastWord", word.getLastWord());
+            post.form("paraphrase", word.getParaphrase());
+            HttpResponse response = post.execute();
+            String body = response.body();
+            log.info("用户:{}, 提交发音评分完成,结果:{}", account, body);
+        } catch (Exception e) {
+            log.error("用户:{}, 提交发音评分错误", account);
+            log.error(e.getMessage(), e);
+        }
+    }
+
 }

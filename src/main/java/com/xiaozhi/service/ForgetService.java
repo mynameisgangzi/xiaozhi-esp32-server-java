@@ -100,10 +100,11 @@ public class ForgetService {
     /**
      * 提交单词发音进行评估
      *
-     * @param account 账号
-     * @param data    发音数据
+     * @param account    账号
+     * @param data       发音数据
+     * @param fileSuffix 文件后缀
      */
-    public void submitWordVoice(String account, byte[] data) {
+    public void submitWordVoice(String account, byte[] data, String fileSuffix) {
         // 获取当前用户正在学习的单词
         String date = LocalDate.now().toString();
         WordDTO currentWord = wordRedisMapper.getCurrentWord(account, date);
@@ -116,7 +117,8 @@ public class ForgetService {
         // 提交发音数据进行评估
         String token = getToken(account);
 
-
+        // 异步提交评分
+        ThreadUtil.execute(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
     }
 
     /**
@@ -154,6 +156,6 @@ public class ForgetService {
                 wordRedisMapper.batchSaveWord(account, date, words);
             }
         }
-
     }
+
 }
