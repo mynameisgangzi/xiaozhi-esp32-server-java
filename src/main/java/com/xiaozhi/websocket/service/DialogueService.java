@@ -78,6 +78,7 @@ public class DialogueService {
     private final Map<String, StringBuilder> responses = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArrayList<Sentence>> sentenceQueue = new ConcurrentHashMap<>();
     private final Map<String, ReentrantLock> locks = new ConcurrentHashMap<>();
+    private final Map<String, byte[]> pcmMap = new ConcurrentHashMap<>();
     @Autowired
     private ForgetService forgetService;
 
@@ -285,7 +286,6 @@ public class DialogueService {
         // 为当前对话生成唯一ID
         final String dialogueId = sessionId + "_" + System.currentTimeMillis();
         sessionManager.setSessionAttribute(sessionId, "currentDialogueId", dialogueId);
-
         // 启动流式识别
         sttService.streamRecognition(audioSink.asFlux())
                 .defaultIfEmpty("")
@@ -299,6 +299,7 @@ public class DialogueService {
 
                     // 设置会话为非监听状态，防止处理自己的声音
                     sessionManager.setListeningState(sessionId, false);
+                    pcmMap.put(device.getStudentAccount(), initialAudio);
 
                     // 获取完整的音频数据并保存
                     return Mono.fromCallable(() -> {
@@ -323,8 +324,7 @@ public class DialogueService {
                                 userAudioPath = AudioUtils.AUDIO_PATH + AudioUtils.saveAsWav(fullPcmData);
                                 sessionManager.setSessionAttribute(sessionId, "userAudioPath_" + dialogueId,
                                         userAudioPath);
-                                // 暂存语音数据
-                                forgetService.saveUserPcmData(device.getStudentAccount(), finalText, fullPcmData);
+
                             } catch (Exception e) {
                                 logger.error("保存用户音频失败: {}", e.getMessage(), e);
                             }
@@ -338,13 +338,15 @@ public class DialogueService {
                                     .then(audioService.sendStart(session))
                                     .then(Mono.fromRunnable(() -> {
                                         // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
+
                                         // 先检查是否已经在复习模式中
                                         if (reviewDialogueService.isInReviewMode(sessionId)) {
                                             logger.info("用户已在复习模式中，发送下一个单词");
                                             // 异步处理下一个单词，避免阻塞当前线程
                                             CompletableFuture.runAsync(() -> {
                                                 String account = device.getStudentAccount();
-                                                byte[] data = forgetService.getUserPcmData(account, finalText);
+                                                // 获取pcm data[]
+                                                byte[] data = pcmMap.get(account);
                                                 // 提交评分
                                                 boolean lastWord = forgetService.submitWordVoice(account, data, "wav");
                                                 // 如果是当前任务的最后单词,则鼓励用户
@@ -363,6 +365,7 @@ public class DialogueService {
                                             });
                                             return; // 不再执行后续的大模型调用
                                         }
+
                                         // 使用句子切分处理响应
                                         llmManager.chatStreamBySentence(device, finalText, true,
                                                 (sentence, isFirst, isLast) -> {

@@ -43,7 +43,7 @@ public class ForgetHttp {
             Map<String, Object> formData = new HashMap<>();
             formData.put("account", account);
             HttpRequest post = HttpUtil.createPost(loginUrl);
-            post.form(formData);
+            post.body(JSONUtil.toJsonStr(formData));
             post.timeout(3000);
             HttpResponse response = post.execute();
             String body = response.body();
@@ -78,8 +78,9 @@ public class ForgetHttp {
             // 解析结果
             JSONObject jsonObject = JSONUtil.parseObj(body);
             if (jsonObject.getInt("code") == 200) {
-                Long calendarId = jsonObject.getLong("calendarId");
-                tasks = jsonObject.getBeanList("forgeTaskSouResultVos", TaskDTO.class);
+                JSONObject data = jsonObject.getJSONObject("data");
+                Long calendarId = data.getLong("calendarId");
+                tasks = data.getBeanList("forgeTaskSouResultVos", TaskDTO.class);
                 if (CollUtil.isNotEmpty(tasks)) {
                     tasks.forEach(task -> task.setCalendarId(calendarId));
                 }

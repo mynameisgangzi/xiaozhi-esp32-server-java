@@ -24,8 +24,6 @@ public class WordRedisMapper {
     // 用户当前所学单词 key
     private static final String WORD_CURRENT_KEY = "forget:word_current:%s:%s";
 
-    private static final String PCM_KEY = "forget:pcm:%s:%s";
-
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
@@ -38,7 +36,9 @@ public class WordRedisMapper {
      */
     public void batchSaveWord(String account, String date, List<WordDTO> words) {
         String key = getWordRedisKey(account, date);
-        redisTemplate.opsForList().rightPush(key, words);
+        for (WordDTO word : words) {
+            redisTemplate.opsForList().rightPush(key, word);
+        }
     }
 
     /**
@@ -70,7 +70,7 @@ public class WordRedisMapper {
             // 单词数据为空,则清楚正在学习的单词
             redisTemplate.delete(currentWordRedisKey);
         }
-        return word;
+        return word == null ? new WordDTO() : word;
     }
 
     /**
@@ -83,20 +83,6 @@ public class WordRedisMapper {
     public WordDTO getCurrentWord(String account, String date) {
         String key = getCurrentWordRedisKey(account, date);
         return (WordDTO) redisTemplate.opsForValue().get(key);
-    }
-
-    public void savePcm(String account, String finalText, byte[] pcm) {
-        String key = getPcmKey(account, finalText);
-        redisTemplate.opsForValue().set(key, pcm);
-    }
-
-    public byte[] getPcm(String account, String finalText) {
-        String key = getPcmKey(account, finalText);
-        return (byte[]) redisTemplate.opsForValue().get(key);
-    }
-
-    public void delPcm(String account, String finalText) {
-        redisTemplate.delete(getPcmKey(account, finalText));
     }
 
     /**
@@ -130,17 +116,6 @@ public class WordRedisMapper {
      */
     private String getCurrentWordRedisKey(String account, String date) {
         return String.format(WORD_CURRENT_KEY, account, date);
-    }
-
-    /**
-     * 获取pcm data key
-     *
-     * @param account   账号
-     * @param finalText 字符串
-     * @return String
-     */
-    private String getPcmKey(String account, String finalText) {
-        return String.format(PCM_KEY, account, finalText);
     }
 
 }

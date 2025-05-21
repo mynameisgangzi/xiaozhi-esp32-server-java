@@ -1,6 +1,7 @@
 package com.xiaozhi.websocket.service;
 
 import cn.hutool.core.lang.Pair;
+import cn.hutool.core.util.StrUtil;
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
 import com.xiaozhi.entity.dto.WordDTO;
@@ -318,13 +319,12 @@ public class ReviewDialogueService {
             Integer noFinshTask = taskInfo.getValue();
             if (noFinshTask > 0) {
                 String taskFinshMessage = "你太棒了,还有最后" + noFinshTask + "个复习任务,继续加油!";
-                return sentenceAudioService.sendSingleMessage(
+                sentenceAudioService.sendSingleMessage(
                                 session,
                                 sessionId,
                                 taskFinshMessage,
                                 ttsConfig,
-                                device.getVoiceName())
-                        .then(exitReviewMode(session));
+                                device.getVoiceName());
             }
         }
 
@@ -332,7 +332,7 @@ public class ReviewDialogueService {
         return Mono.fromCallable(() -> forgetService.getNextWord(studentAccount))
         .subscribeOn(Schedulers.boundedElastic())
         .flatMap(nextWord -> {
-            if (nextWord == null) {
+            if (StrUtil.isBlank(nextWord.getWord())) {
                 // 所有单词都已复习完
                 String completionMessage = "恭喜你完成了所有单词的复习！你太棒了！";
                 

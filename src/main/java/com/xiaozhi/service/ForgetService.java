@@ -100,7 +100,7 @@ public class ForgetService {
 
         // 异步更新任务的单词列表
         if (CollUtil.isNotEmpty(newTasks)) {
-            ThreadUtil.execute(() -> saveTaskWordList(account, token, date, newTasks));
+            saveTaskWordList(account, token, date, newTasks);
         }
 
         // 返回待完成的任务数量
@@ -131,7 +131,7 @@ public class ForgetService {
         String date = LocalDate.now().toString();
         WordDTO currentWord = wordRedisMapper.getCurrentWord(account, date);
 
-        if (currentWord == null || data == null || data.length == 0) {
+        if (currentWord == null) {
             // 如果当前学习单词查询失败获取发音数据不存在,则直接返回
             return false;
         }
@@ -147,7 +147,9 @@ public class ForgetService {
         }
 
         // 异步提交评分
-        Mono.fromRunnable(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
+        if (data != null && data.length > 0) {
+            Mono.fromRunnable(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
+        }
 
         // 返回是否最后一个单词
         return lastFlag;
@@ -164,31 +166,6 @@ public class ForgetService {
         List<TaskDTO> oldTasks = taskRedisMapper.getTasks(account, date);
         int noFinshTaskNumber = Math.toIntExact(oldTasks.stream().filter(task -> task.getFinished() == 0).count());
         return Pair.of(oldTasks.size(), noFinshTaskNumber);
-    }
-
-    /**
-     * 暂停用户语音数据
-     *
-     * @param account   账号
-     * @param finalText 文本
-     * @param data      data
-     */
-    public void saveUserPcmData(String account, String finalText, byte[] data) {
-        wordRedisMapper.savePcm(account, finalText, data);
-    }
-
-    /**
-     * 获取用户暂存的语音
-     *
-     * @param account   账号
-     * @param finalText 文本
-     * @return 语音数据
-     */
-    public byte[] getUserPcmData(String account, String finalText) {
-        byte[] pcm = wordRedisMapper.getPcm(account, finalText);
-        // 取出之后删除暂存的语音数据
-        wordRedisMapper.delPcm(account, finalText);
-        return pcm;
     }
 
     /**
