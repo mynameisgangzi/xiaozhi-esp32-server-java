@@ -116,6 +116,7 @@
                 </choose>
             </if>
             <if test="roleId != null and roleId != ''">roleId = #{roleId},</if>
+            <if test="studentAccount != null and studentAccount != ''">studentAccount = #{studentAccount},</if>
         </set>
         WHERE
             deviceId = #{deviceId}
