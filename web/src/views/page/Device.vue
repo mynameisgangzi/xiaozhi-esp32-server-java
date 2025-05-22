@@ -31,6 +31,21 @@
             <a-button slot="footer" :loading="exportLoading" :disabled="true" @click="">
               导出
             </a-button>
+            <!-- 学生账号 -->
+            <template slot="studentAccount" slot-scope="text, record">
+              <div>
+                <a-input v-if="record.editable" style="margin: -5px 0; text-align: center" :value="text" @change="
+                  (e) => inputEdit(e.target.value, record.deviceId, 'studentAccount')
+                " @keyup.enter="(e) => update(record, record.deviceId)" @keyup.esc="(e) => cancel(record.deviceId)" />
+                <span v-else-if="editingKey === ''" @click="edit(record.deviceId)" style="cursor: pointer">
+                  <a-tooltip title="点击编辑" :mouseEnterDelay="0.5">
+                    <span v-if="text">{{ text }}</span>
+                    <span v-else style="padding: 0 50px">&nbsp;&nbsp;&nbsp;</span>
+                  </a-tooltip>
+                </span>
+                <span v-else>{{ text }}</span>
+              </div>
+            </template>
             <!-- deviceName部分保持不变 -->
             <template v-for="col in ['deviceName']" :slot="col" slot-scope="text, record">
               <div :key="col">
@@ -212,6 +227,13 @@ export default {
           scopedSlots: { customRender: "deviceId" },
           width: 160,
           fixed: "left",
+          align: "center",
+        },
+        {
+          title: "学生账号",
+          dataIndex: "studentAccount",
+          scopedSlots: { customRender: "studentAccount" },
+          width: 120,
           align: "center",
         },
         {
@@ -596,6 +618,7 @@ export default {
             sttId: val.sttId,
             ttsId: val.ttsId,
             roleId: val.roleId,
+            studentAccount: val.studentAccount,
           }
         })
         .then((res) => {
