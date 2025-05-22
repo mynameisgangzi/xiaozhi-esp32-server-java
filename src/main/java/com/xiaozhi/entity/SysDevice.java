@@ -110,6 +110,10 @@ public class SysDevice extends SysRole {
         return studentAccount;
     }
     
+    public SysDevice setStudentAccount(String studentAccount) {
+        this.studentAccount = studentAccount;
+        return this;
+    }
     
 
     public Integer getModelId() {
