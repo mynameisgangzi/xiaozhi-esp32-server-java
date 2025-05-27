@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author 匡江山
@@ -56,6 +57,14 @@ public class TaskRedisMapper {
     public void batchSaveTasks(String account, String date, List<TaskDTO> tasks) {
         String key = getTaskRedisKey(account, date);
         redisTemplate.opsForValue().set(key, tasks);
+    }
+
+    /**
+     * 清除任务
+     */
+    public void cleanTasks() {
+        Set<String> keys = redisTemplate.keys(TASK_REDIS_KEY.replace("%s:%s", "*"));
+        redisTemplate.delete(keys);
     }
 
     /**

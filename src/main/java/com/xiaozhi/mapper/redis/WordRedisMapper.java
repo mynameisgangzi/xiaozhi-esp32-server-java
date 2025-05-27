@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author 匡江山
@@ -26,6 +27,15 @@ public class WordRedisMapper {
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
+
+    public void cleanWord() {
+        Set<String> keys1 = redisTemplate.keys(WORD_REDIS_KEY.replace("%s:%s", "*"));
+        redisTemplate.delete(keys1);
+        Set<String> keys2 = redisTemplate.keys(WORD_INDEX_KEY.replace("%s:%s", "*"));
+        redisTemplate.delete(keys2);
+        Set<String> keys3 = redisTemplate.keys(WORD_CURRENT_KEY.replace("%s:%s", "*"));
+        redisTemplate.delete(keys3);
+    }
 
     /**
      * 保存单词列表
