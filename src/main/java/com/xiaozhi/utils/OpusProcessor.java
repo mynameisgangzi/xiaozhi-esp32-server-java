@@ -16,10 +16,12 @@ import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.PreDestroy;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -43,6 +45,49 @@ public class OpusProcessor {
 
     // 预热帧数量 - 添加几个静音帧来预热编解码器
     private static final int PREWARM_FRAMES = 2;
+
+    // Opus转wav字节数组
+    public byte[] pcmToWav(byte[] pcmData) {
+        if (pcmData == null || pcmData.length == 0) {
+            return new byte[0];
+        }
+
+        try {
+            // 创建WAV文件头
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            DataOutputStream dos = new DataOutputStream(outputStream);
+
+            // WAV文件参数
+            int bitsPerSample = 16; // 16位采样
+
+            // RIFF头
+            dos.writeBytes("RIFF");
+            dos.writeInt(Integer.reverseBytes(36 + pcmData.length)); // 文件长度
+            dos.writeBytes("WAVE");
+
+            // fmt子块
+            dos.writeBytes("fmt ");
+            dos.writeInt(Integer.reverseBytes(16)); // 子块大小
+            dos.writeShort(Short.reverseBytes((short) 1)); // 音频格式 (1 = PCM)
+            dos.writeShort(Short.reverseBytes((short) CHANNELS)); // 通道数
+            dos.writeInt(Integer.reverseBytes(SAMPLE_RATE)); // 采样率
+            dos.writeInt(Integer.reverseBytes(SAMPLE_RATE * CHANNELS * bitsPerSample / 8)); // 字节率
+            dos.writeShort(Short.reverseBytes((short) (CHANNELS * bitsPerSample / 8))); // 块对齐
+            dos.writeShort(Short.reverseBytes((short) bitsPerSample)); // 每个样本的位数
+
+            // data子块
+            dos.writeBytes("data");
+            dos.writeInt(Integer.reverseBytes(pcmData.length)); // 数据大小
+
+            // 写入PCM数据
+            dos.write(pcmData);
+
+            return outputStream.toByteArray();
+        } catch (Exception e) {
+            logger.error("pcm转WAV失败", e);
+            return new byte[0];
+        }
+    }
 
     /**
      * Opus转PCM字节数组

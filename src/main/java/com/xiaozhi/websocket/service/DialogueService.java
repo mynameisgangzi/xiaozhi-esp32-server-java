@@ -326,8 +326,9 @@ public class DialogueService {
                                     System.arraycopy(frame, 0, fullPcmData, offset, frame.length);
                                     offset += frame.length;
                                 }
+                                byte[] bytes = opusProcessor.pcmToWav(fullPcmData);
                                 //TODO
-                                pcmMap.put(device.getStudentAccount(), fullPcmData);
+                                pcmMap.put(device.getStudentAccount(), bytes);
                                 // 保存完整的PCM数据
                                 userAudioPath = AudioUtils.AUDIO_PATH + AudioUtils.saveAsWav(fullPcmData);
                                 sessionManager.setSessionAttribute(sessionId, "userAudioPath_" + dialogueId,
