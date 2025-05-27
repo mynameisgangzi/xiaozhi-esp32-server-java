@@ -141,9 +141,10 @@ public class ForgetHttp {
             String submitUrl = forgetApi + "/forgetApp/study/individualRecordingReports";
             HttpRequest post = HttpUtil.createPost(submitUrl);
             post.header("Authorization", token);
-            post.form("file", data, UUID.randomUUID() + "." + fileSuffix);
+            post.form("audioFile", data, UUID.randomUUID() + "." + fileSuffix);
             post.form("detailId", word.getDetailId());
             post.form("calendarId", word.getCalendarId());
+            post.form("duration", 1);
             post.form("taskId", word.getTaskId());
             post.form("vocabularyId", word.getVocabularyId());
             post.form("word", word.getWord());

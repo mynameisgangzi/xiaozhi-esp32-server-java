@@ -148,7 +148,7 @@ public class ForgetService {
 
         // 异步提交评分
         if (data != null && data.length > 0) {
-            Mono.fromRunnable(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
+            ThreadUtil.execute(() -> forgetHttp.submitWordVoice(account, token, currentWord, data, fileSuffix));
         }
 
         // 返回是否最后一个单词
