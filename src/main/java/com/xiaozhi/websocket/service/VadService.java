@@ -61,6 +61,10 @@ public class VadService {
     private final ConcurrentHashMap<String, VadSessionState> sessionStates = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
 
+    public void removeState(String sessionId) {
+        VadSessionState state = sessionStates.get(sessionId);
+        state.reset();
+    }
     @PostConstruct
     public void init() {
         try {
@@ -332,7 +336,7 @@ public class VadService {
                 state = new VadSessionState();
                 sessionStates.put(sessionId, state);
             } else {
-                state.reset();
+//                state.reset();
             }
             logger.info("VAD会话初始化 - SessionId: {}", sessionId);
         }
@@ -618,9 +622,9 @@ public class VadService {
         synchronized (lock) {
             VadSessionState state = sessionStates.get(sessionId);
             if (state != null) {
-                state.reset();
+//                state.reset();
             }
-            sessionStates.remove(sessionId);
+//            sessionStates.remove(sessionId);
 
             if (enableNoiseReduction && tarsosNoiseReducer != null) {
                 tarsosNoiseReducer.cleanupSession(sessionId);

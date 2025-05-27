@@ -1,11 +1,13 @@
 package com.xiaozhi.websocket.service;
 
+import cn.hutool.core.io.FileUtil;
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
 import com.xiaozhi.service.ForgetService;
 import com.xiaozhi.utils.AudioUtils;
 import com.xiaozhi.utils.EmojiUtils;
 import com.xiaozhi.utils.EmojiUtils.EmoSentence;
+import com.xiaozhi.utils.OpusProcessor;
 import com.xiaozhi.websocket.llm.LlmManager;
 import com.xiaozhi.websocket.service.VadService.VadStatus;
 import com.xiaozhi.websocket.stt.SttService;
@@ -23,6 +25,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,6 +73,9 @@ public class DialogueService {
 
     @Autowired
     private SentenceAudioService sentenceAudioService;
+
+    @Autowired
+    private OpusProcessor opusProcessor;
 
     // 会话状态管理
     private final Map<String, AtomicInteger> seqCounters = new ConcurrentHashMap<>();
@@ -299,12 +305,13 @@ public class DialogueService {
 
                     // 设置会话为非监听状态，防止处理自己的声音
                     sessionManager.setListeningState(sessionId, false);
-                    pcmMap.put(device.getStudentAccount(), initialAudio);
+
 
                     // 获取完整的音频数据并保存
                     return Mono.fromCallable(() -> {
                         // 获取完整的PCM数据 - 使用原始未处理的PCM数据而非处理后的
                         List<byte[]> pcmFrames = vadService.getRawAudioData(sessionId);
+                        vadService.removeState(sessionId);
                         String userAudioPath = null;
 
                         if (pcmFrames != null && !pcmFrames.isEmpty()) {
@@ -319,7 +326,8 @@ public class DialogueService {
                                     System.arraycopy(frame, 0, fullPcmData, offset, frame.length);
                                     offset += frame.length;
                                 }
-
+                                //TODO
+                                pcmMap.put(device.getStudentAccount(), fullPcmData);
                                 // 保存完整的PCM数据
                                 userAudioPath = AudioUtils.AUDIO_PATH + AudioUtils.saveAsWav(fullPcmData);
                                 sessionManager.setSessionAttribute(sessionId, "userAudioPath_" + dialogueId,
