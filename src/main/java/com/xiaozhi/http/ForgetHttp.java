@@ -149,6 +149,7 @@ public class ForgetHttp {
             post.form("taskId", word.getTaskId());
             post.form("vocabularyId", word.getVocabularyId());
             post.form("word", word.getWord());
+            post.form("wordChoose", word.getParaphrase());
             post.form("lastWord", word.getLastWord());
             post.form("paraphrase", word.getParaphrase());
             // 默认测评格式为wav格式
