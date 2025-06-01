@@ -364,6 +364,11 @@ public class DialogueService {
                                             });
                                             return; // 不再执行后续的大模型调用
                                         }
+                                        else if (reviewDialogueService.isInErrorReviewMode(sessionId)) {
+                                            logger.info("检测在错误模式复习中");
+                                            CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig).subscribe());
+                                            return;
+                                        }
                                         // 判断是否需要进入复习模式
                                         if (reviewDialogueService.containsLearningIntent(finalText)) {
                                             logger.info("检测到学习意图，启动复习模式而不是调用大模型");
@@ -373,10 +378,6 @@ public class DialogueService {
                                                         .subscribe();
                                             });
                                             return; // 不再执行后续的大模型调用
-                                        } else if (reviewDialogueService.isInErrorReviewMode(sessionId)) {
-                                            logger.info("检测在错误模式复习中");
-                                            CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig).subscribe());
-                                            return;
                                         }
 
                                         // 使用句子切分处理响应

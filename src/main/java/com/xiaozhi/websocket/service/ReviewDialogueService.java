@@ -69,7 +69,7 @@ public class ReviewDialogueService {
     public boolean containsLearningIntent(String text) {
         return LEARN_INTENT_PATTERN.matcher(text).matches();
     }
-    
+
     /**
      * 尝试切换到复习模式
      * @param session WebSocket会话
@@ -283,6 +283,7 @@ public class ReviewDialogueService {
                                 device.getVoiceName());
             }
         }
+        WordDTO currentWord = forgetService.getCurrentWord(studentAccount);
 
         // 获取当前复习项
         return Mono.fromCallable(() -> forgetService.getNextWord(studentAccount))
@@ -299,7 +300,7 @@ public class ReviewDialogueService {
                         completionMessage,
                         ttsConfig,
                         device.getVoiceName())
-                        .then(checkErrorWords(session, studentAccount, device, ttsConfig));
+                        .then(checkErrorWords(currentWord.getCalendarId(), session, studentAccount, device, ttsConfig));
 //                    .then(exitReviewMode(session));
             }
             
@@ -321,9 +322,9 @@ public class ReviewDialogueService {
         });
     }
 
-    public Mono<Void> checkErrorWords(WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig) {
+    public Mono<Void> checkErrorWords(Long calenderId, WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig) {
         // 错误单词列表
-        List<WordDTO> errorList = forgetService.checkErrorWordList(account, forgetService.getCurrentWord(account).getCalendarId());
+        List<WordDTO> errorList = forgetService.checkErrorWordList(account, calenderId);
         if (CollUtil.isEmpty(errorList)) {
             // 没有错误单词
             sentenceAudioService.sendSingleMessage(
@@ -350,6 +351,13 @@ public class ReviewDialogueService {
         if (CollUtil.isEmpty(list)) {
             reviewService.exitErrorReviewMode(sessionId);
         }
+        String messageContent = "你有" + list.size() + "个单词复习错误!";
+        sentenceAudioService.sendSingleMessage(
+                session,
+                session.getId(),
+                messageContent,
+                ttsConfig,
+                device.getVoiceName()).subscribe();
         WordDTO word = list.get(0);
         list.remove(word);
         String message = "第一个错误的单词是：" + word.getWord() + "，请跟着我练习";
