@@ -15,7 +15,6 @@ import com.xiaozhi.mapper.redis.WordRedisMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
 import java.util.*;
@@ -120,6 +119,17 @@ public class ForgetService {
     }
 
     /**
+     * 获取当前单词
+     *
+     * @param account 账号
+     * @return WordDTO
+     */
+    public WordDTO getCurrentWord(String account) {
+        String date = LocalDate.now().toString();
+        return wordRedisMapper.getCurrentWord(account, date);
+    }
+
+    /**
      * 提交单词发音进行评估
      *
      * @param account    账号
@@ -153,6 +163,17 @@ public class ForgetService {
 
         // 返回是否最后一个单词
         return lastFlag;
+    }
+
+    /**
+     * 查询错误单词列表
+     *
+     * @param account    账号
+     * @param calendarId 日历编号
+     */
+    public List<WordDTO> checkErrorWordList(String account, Long calendarId) {
+        String token = getToken(account);
+        return forgetHttp.getErrorWordList(token, calendarId);
     }
 
     /**

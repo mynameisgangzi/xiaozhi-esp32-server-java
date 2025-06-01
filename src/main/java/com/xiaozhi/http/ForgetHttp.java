@@ -2,7 +2,6 @@ package com.xiaozhi.http;
 
 
 import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
@@ -126,6 +125,30 @@ public class ForgetHttp {
             log.error(e.getMessage(), e);
         }
         return Optional.ofNullable(words).orElse(new ArrayList<>());
+    }
+
+    /**
+     * 查询错误单词列表
+     *
+     * @param token      token
+     * @param calendarId 日历编号
+     * @return List<WordDTO>
+     */
+    public List<WordDTO> getErrorWordList(String token, Long calendarId) {
+        List<WordDTO> errorWords = null;
+        try {
+            String wordUrl = forgetApi + "/forgetApp/index/queryByDifficult?calendarId=" + calendarId;
+            HttpResponse response = HttpUtil.createGet(wordUrl).header("Authorization", token).timeout(6000).execute();
+            String body = response.body();
+            JSONObject jsonObject = JSONUtil.parseObj(body);
+            if (jsonObject.getInt("code") == 200) {
+                errorWords = jsonObject.getBeanList("data", WordDTO.class);
+            }
+        } catch (Exception e) {
+            log.error("获取错误单词列表失败");
+            log.error(e.getMessage(), e);
+        }
+        return errorWords;
     }
 
     /**

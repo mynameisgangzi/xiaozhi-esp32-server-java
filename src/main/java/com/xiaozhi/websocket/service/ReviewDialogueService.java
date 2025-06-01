@@ -1,5 +1,6 @@
 package com.xiaozhi.websocket.service;
 
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.Pair;
 import cn.hutool.core.util.StrUtil;
 import com.xiaozhi.entity.SysConfig;
@@ -57,6 +58,8 @@ public class ReviewDialogueService {
     
     // 保存当前复习进度
     private final Map<String, Integer> reviewIndexMap = new ConcurrentHashMap<>();
+
+    private final ConcurrentHashMap<String, List<WordDTO>> errorWordMap = new ConcurrentHashMap<>();
     
     /**
      * 检查是否包含学习意图
@@ -132,65 +135,6 @@ public class ReviewDialogueService {
                                     device.getVoiceName())
                             .thenReturn(false);
                 });
-
-
-        
-//        // 获取用户的复习任务
-//        return Mono.<List<Map<String, String>>>fromCallable(() -> reviewService.getReviewTasks(studentAccount, null))
-//            .subscribeOn(Schedulers.boundedElastic())
-//            .flatMap(tasks -> Mono.<Boolean>defer(() -> {
-//                if (tasks == null || tasks.isEmpty()) {
-//                    // 没有复习任务
-//                    String noTaskMessage = "今天没有复习任务";
-//
-//                    // 使用SentenceAudioService发送消息
-////                    SysConfig ttsConfig = null;
-////                    if (device.getTtsId() != null) {
-////                        ttsConfig = sessionManager.getCachedConfig(device.getTtsId());
-////                    }
-//                    logger.info("device.getVoiceName()=={}",device.getVoiceName());
-//                    return sentenceAudioService.sendSingleMessage(
-//                            session,
-//                            sessionId,
-//                            noTaskMessage,
-//                            ttsConfig,
-//                            device.getVoiceName())
-//                        .thenReturn(false);
-//                }
-//
-//                // 设置为复习模式
-//                logger.info("设置为复习模式");
-//                reviewService.setReviewMode(sessionId, studentAccount);
-//                reviewIndexMap.put(sessionId, 0);
-//                String taskInfo = "我们现在开始复习吧";
-//
-//                // 使用SentenceAudioService发送复习模式开始提示
-//
-//
-//                logger.info("发送复习模式开始提示");
-//                return sentenceAudioService.sendSingleMessage(
-//                        session,
-//                        sessionId,
-//                        taskInfo,
-//                        ttsConfig,
-//                        device.getVoiceName())
-//                    .then(startReviewSession(session, studentAccount))
-//                    .thenReturn(true);
-//            }))
-//            .onErrorResume(e -> {
-//                logger.error("切换到复习模式失败", e);
-//                String errorMessage = "切换到复习模式失败，请稍后再试。";
-//
-//                // 使用SentenceAudioService发送错误消息
-//
-//                return sentenceAudioService.sendSingleMessage(
-//                        session,
-//                        sessionId,
-//                        errorMessage,
-//                        ttsConfig,
-//                        device.getVoiceName())
-//                    .thenReturn(false);
-//            });
     }
     
     /**
@@ -264,7 +208,11 @@ public class ReviewDialogueService {
     public boolean isInReviewMode(String sessionId) {
         return reviewService.isInReviewMode(sessionId);
     }
-    
+
+    public boolean isInErrorReviewMode(String sessionId) {
+        return reviewService.isInErrorReviewMode(sessionId);
+    }
+
     /**
      * 退出复习模式
      */
@@ -290,22 +238,30 @@ public class ReviewDialogueService {
                 message,
                 ttsConfig,
                 device.getVoiceName());
-        // 调用大模型回复学生
-//        String finalText = "学生完成了抗遗忘训练，已退出复习模式，请你扮演老师的角色用简洁的话给予学生鼓励和肯定";
-//        llmManager.chatStreamBySentence(device, finalText, true,
-//                (sentence, isFirst, isLast) -> {
-//                    sentenceAudioService.handleSentence(
-//                            session,
-//                            sessionId,
-//                            finalText,
-//                            isFirst,
-//                            isLast,
-//                            ttsConfig,
-//                            device.getVoiceName()); // 传递对话ID
-//                });
-//        return Mono.empty();
     }
-    
+
+    public Mono<Void> exitErrorReviewMode(WebSocketSession session) {
+        String sessionId = session.getId();
+        reviewService.exitErrorReviewMode(sessionId);
+        SysDevice device = sessionManager.getDeviceConfig(sessionId);
+        if (device == null) {
+            return Mono.empty();
+        }
+
+        // 获取TTS配置
+        final SysConfig ttsConfig = device.getTtsId() != null ?
+                sessionManager.getCachedConfig(device.getTtsId()) : null;
+
+        String message = "已退出复习模式，你可以继续与我对话。";
+        // 使用SentenceAudioService发送退出消息
+        return sentenceAudioService.sendSingleMessage(
+                session,
+                sessionId,
+                message,
+                ttsConfig,
+                device.getVoiceName());
+    }
+
     /**
      * 处理下一个单词
      */
@@ -335,7 +291,7 @@ public class ReviewDialogueService {
             if (StrUtil.isBlank(nextWord.getWord())) {
                 // 所有单词都已复习完
                 String completionMessage = "恭喜你完成了所有单词的复习！你太棒了！";
-                
+
                 // 使用SentenceAudioService发送完成消息
                 return sentenceAudioService.sendSingleMessage(
                         session,
@@ -343,7 +299,8 @@ public class ReviewDialogueService {
                         completionMessage,
                         ttsConfig,
                         device.getVoiceName())
-                    .then(exitReviewMode(session));
+                        .then(checkErrorWords(session, studentAccount, device, ttsConfig));
+//                    .then(exitReviewMode(session));
             }
             
             // 提示下一个单词
@@ -362,6 +319,62 @@ public class ReviewDialogueService {
                     ttsConfig,
                     device.getVoiceName());
         });
+    }
+
+    public Mono<Void> checkErrorWords(WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig) {
+        // 错误单词列表
+        List<WordDTO> errorList = forgetService.checkErrorWordList(account, forgetService.getCurrentWord(account).getCalendarId());
+        if (CollUtil.isEmpty(errorList)) {
+            // 没有错误单词
+            sentenceAudioService.sendSingleMessage(
+                    session,
+                    session.getId(),
+                    "你真棒，没有复习错误的单词，再接再厉！",
+                    ttsConfig,
+                    device.getVoiceName());
+            return exitReviewMode(session);
+        }
+        errorWordMap.put(session.getId(), errorList);
+        // 进入错误单词带读模式
+        return entryErrorReviewMode(session, device, ttsConfig);
+    }
+
+    public Mono<Void> entryErrorReviewMode(WebSocketSession session, SysDevice device, SysConfig ttsConfig) {
+        String sessionId = session.getId();
+        // 退出复习模型
+        reviewService.exitReviewMode(sessionId);
+        // 进入错误单词带读模式
+        reviewService.setErrorReviewMode(sessionId);
+        // 获取第一个错误单词发送给用户学习
+        List<WordDTO> list = errorWordMap.get(sessionId);
+        if (CollUtil.isEmpty(list)) {
+            reviewService.exitErrorReviewMode(sessionId);
+        }
+        WordDTO word = list.get(0);
+        list.remove(word);
+        String message = "第一个错误的单词是：" + word.getWord() + "，请跟着我练习";
+        return sentenceAudioService.sendSingleMessage(
+                session,
+                session.getId(),
+                message,
+                ttsConfig,
+                device.getVoiceName());
+    }
+
+    public Mono<Void> processErrorNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig) {
+        List<WordDTO> list = errorWordMap.get(sessionId);
+        if (CollUtil.isEmpty(list)) {
+            reviewService.exitErrorReviewMode(sessionId);
+        }
+        WordDTO word = list.get(0);
+        list.remove(word);
+        String message = word.getWord();
+        return sentenceAudioService.sendSingleMessage(
+                session,
+                session.getId(),
+                message,
+                ttsConfig,
+                device.getVoiceName());
     }
     
     /**

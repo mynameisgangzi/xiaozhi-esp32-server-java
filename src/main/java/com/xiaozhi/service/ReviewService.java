@@ -28,6 +28,7 @@ public class ReviewService {
     private static final Logger logger = LoggerFactory.getLogger(ReviewService.class);
     private static final String REVIEW_CACHE_KEY_PREFIX = "review:task:";
     private static final String REVIEW_MODE_KEY_PREFIX = "review:mode:";
+    private static final String ERROR_REVIEW_MODE_KEY_PREFIX = "error_review:mode:";
     private static final int CACHE_EXPIRY_HOURS = 24;
 
     @Autowired
@@ -178,7 +179,7 @@ public class ReviewService {
         redisTemplate.opsForHash().put(modeKey, "active", true);
         redisTemplate.expire(modeKey, CACHE_EXPIRY_HOURS, TimeUnit.HOURS);
     }
-    
+
     /**
      * 检查会话是否处于复习模式
      * @param sessionId WebSocket会话ID
@@ -216,6 +217,24 @@ public class ReviewService {
      */
     public void exitReviewMode(String sessionId) {
         String modeKey = REVIEW_MODE_KEY_PREFIX + sessionId;
+        redisTemplate.delete(modeKey);
+    }
+
+    public void setErrorReviewMode(String sessionId) {
+        String modeKey = ERROR_REVIEW_MODE_KEY_PREFIX + sessionId;
+        // 保存当前正在复习的用户ID和复习进度
+        redisTemplate.opsForHash().put(modeKey, "active", true);
+        redisTemplate.expire(modeKey, CACHE_EXPIRY_HOURS, TimeUnit.HOURS);
+    }
+
+    public boolean isInErrorReviewMode(String sessionId) {
+        String modeKey = ERROR_REVIEW_MODE_KEY_PREFIX + sessionId;
+        Object active = redisTemplate.opsForHash().get(modeKey, "active");
+        return Boolean.TRUE.equals(active);
+    }
+
+    public void exitErrorReviewMode(String sessionId) {
+        String modeKey = ERROR_REVIEW_MODE_KEY_PREFIX + sessionId;
         redisTemplate.delete(modeKey);
     }
 } 

@@ -373,6 +373,10 @@ public class DialogueService {
                                                         .subscribe();
                                             });
                                             return; // 不再执行后续的大模型调用
+                                        } else if (reviewDialogueService.isInErrorReviewMode(sessionId)) {
+                                            logger.info("检测在错误模式复习中");
+                                            CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig).subscribe());
+                                            return;
                                         }
 
                                         // 使用句子切分处理响应

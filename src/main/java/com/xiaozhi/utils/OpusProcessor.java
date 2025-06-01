@@ -10,21 +10,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.annotation.PreDestroy;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 
 @Component
@@ -45,6 +41,90 @@ public class OpusProcessor {
 
     // 预热帧数量 - 添加几个静音帧来预热编解码器
     private static final int PREWARM_FRAMES = 2;
+
+    /**
+     * PCM转MP3字节数组
+     * 
+     * @param pcmData PCM音频数据
+     * @return MP3格式的字节数组
+     */
+    public byte[] pcmToMp3(byte[] pcmData) {
+        if (pcmData == null || pcmData.length == 0) {
+            return new byte[0];
+        }
+        
+        String uuid = UUID.randomUUID().toString().replace("-", "");
+        String tempPcmPath = AudioUtils.AUDIO_PATH + uuid + ".pcm";
+        String tempMp3Path = AudioUtils.AUDIO_PATH + uuid + ".mp3";
+        
+        try {
+            // 确保音频目录存在
+            Files.createDirectories(Paths.get(AudioUtils.AUDIO_PATH));
+            
+            // 先将PCM数据写入临时文件
+            try (FileOutputStream fos = new FileOutputStream(tempPcmPath)) {
+                fos.write(pcmData);
+            }
+            
+            // 构建ffmpeg命令：将PCM转换为MP3
+            String[] command = {
+                    "ffmpeg",
+                    "-f", "s16le", // 输入格式：16位有符号小端序PCM
+                    "-ar", String.valueOf(SAMPLE_RATE), // 采样率
+                    "-ac", String.valueOf(CHANNELS), // 声道数
+                    "-i", tempPcmPath, // 输入文件
+                    "-b:a", String.valueOf(AudioUtils.BITRATE), // 比特率
+                    "-f", "mp3", // 输出格式
+                    "-q:a", "0", // 最高质量
+                    tempMp3Path // 输出文件
+            };
+            
+            // 执行命令
+            Process process = Runtime.getRuntime().exec(command);
+            
+            // 读取错误输出以便调试
+            StringBuilder errorOutput = new StringBuilder();
+            try (InputStream errorStream = process.getErrorStream()) {
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = errorStream.read(buffer)) != -1) {
+                    errorOutput.append(new String(buffer, 0, bytesRead));
+                }
+            }
+            
+            // 等待进程完成
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                logger.error("ffmpeg转换失败，退出代码: {}，错误信息: {}", exitCode, errorOutput.toString());
+                return new byte[0];
+            }
+            
+            // 检查输出文件是否存在
+            if (!Files.exists(Paths.get(tempMp3Path))) {
+                logger.error("ffmpeg转换后的MP3文件不存在");
+                return new byte[0];
+            }
+            
+            // 读取MP3文件内容
+            byte[] mp3Data = Files.readAllBytes(Paths.get(tempMp3Path));
+            return mp3Data;
+            
+        } catch (IOException | InterruptedException e) {
+            logger.error("PCM转MP3时发生错误", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new byte[0];
+        } finally {
+            // 删除临时文件
+            try {
+                Files.deleteIfExists(Paths.get(tempPcmPath));
+                Files.deleteIfExists(Paths.get(tempMp3Path));
+            } catch (IOException e) {
+                logger.warn("删除临时文件失败", e);
+            }
+        }
+    }
 
     // Opus转wav字节数组
     public byte[] pcmToWav(byte[] pcmData) {
