@@ -92,6 +92,16 @@ public class SysDevice extends SysRole {
     private String studentAccount;
 
     /**
+     * 学生姓名
+     */
+    private String username;
+
+    /**
+     * 配对码
+     */
+    private String pairCode;
+
+    /**
      * 创建学生所在平台编号 get set方法
      */
     public String getTenantCode() {
@@ -101,7 +111,22 @@ public class SysDevice extends SysRole {
         this.tenantCode = tenantCode;
         return this;
     }
-    
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPairCode() {
+        return pairCode;
+    }
+
+    public void setPairCode(String pairCode) {
+        this.pairCode = pairCode;
+    }
 
     /**
      * get set

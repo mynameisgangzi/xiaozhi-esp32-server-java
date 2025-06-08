@@ -206,6 +206,53 @@ public class DeviceController {
                 });
     }
 
+    @PostMapping("/addDevice")
+    public Mono<AjaxResult> addDevice(ServerWebExchange exchange) {
+        return exchange.getFormData()
+                .flatMap(formData -> {
+                    String code = formData.getFirst("code");
+                    String deviceMac = formData.getFirst("deviceId");
+                    String account = formData.getFirst("account");
+                    String username = formData.getFirst("username");
+                    return Mono.fromCallable(() -> {
+                        try {
+                            SysDevice device = new SysDevice();
+                            device.setCode(code);
+                            device.setDeviceId(deviceMac);
+                            SysDevice query = deviceService.queryVerifyCode(device);
+                            if (query == null) {
+                                return AjaxResult.error("无效验证码");
+                            }
+                            // 设置用户信息
+                            device.setUsername(username);
+                            device.setStudentAccount(account);
+                            // 从请求属性中获取用户信息
+                            SysUser user = exchange.getAttribute(CmsUtils.USER_ATTRIBUTE_KEY);
+                            if (user != null) {
+                                device.setUserId(user.getUserId());
+                            }
+
+                            device.setDeviceId(query.getDeviceId());
+                            device.setDeviceName(query.getType().length() > 0 ? query.getType() : "小智");
+                            int row = deviceService.add(device);
+                            if (row > 0) {
+                                String deviceId = device.getDeviceId();
+                                String sessionId = sessionManager.getSessionByDeviceId(deviceId);
+                                if (sessionId != null) {
+                                    sessionManager.closeSession(sessionId);
+                                }
+                                return AjaxResult.success();
+                            } else {
+                                return AjaxResult.error();
+                            }
+                        } catch (Exception e) {
+                            logger.error(e.getMessage(), e);
+                            return AjaxResult.error();
+                        }
+                    });
+                });
+    }
+
     /**
      * 删除设备
      * 
