@@ -123,8 +123,8 @@
     </update>
 
     <insert id="add" useGeneratedKeys="true" keyProperty="deviceName" parameterType="com.xiaozhi.entity.SysDevice">
-        INSERT INTO sys_device ( deviceId, deviceName, type, userId, modelId, sttId, roleId ) VALUES (
-            #{deviceId}, #{deviceName}, #{type}, #{userId}, #{modelId}, #{sttId}, #{roleId}
+        INSERT INTO sys_device ( deviceId, deviceName, type, userId, modelId, sttId, roleId, studentAccount, username ) VALUES (
+            #{deviceId}, #{deviceName}, #{type}, #{userId}, #{modelId}, #{sttId}, #{roleId}, #{studentAccount}, #{username}
         )
     </insert>
 
