@@ -58,7 +58,7 @@ public class SentenceAudioService {
         private long timestamp = System.currentTimeMillis();
         private double processingTime = 0.0; // 处理时间（秒）
         private double ttsGenerationTime = 0.0; // TTS生成时间（秒）
-
+        private String dialogueId = null; // 对话ID
         public Sentence(int seq, String text, boolean isFirst, boolean isLast) {
             this.seq = seq;
             this.text = text;
@@ -114,6 +114,13 @@ public class SentenceAudioService {
         public double getTtsGenerationTime() {
             return ttsGenerationTime;
         }
+        public void setDialogueId(String dialogueId) {
+            this.dialogueId = dialogueId;
+        }
+
+        public String getDialogueId() {
+            return dialogueId;
+        }
     }
 
     /**
@@ -136,7 +143,8 @@ public class SentenceAudioService {
             boolean isFirst,
             boolean isLast,
             SysConfig ttsConfig,
-            String voiceName) {
+            String voiceName,
+            String dialogueId) {
 
         // 确保会话已初始化
         initSession(sessionId);
@@ -156,7 +164,7 @@ public class SentenceAudioService {
         // 创建句子对象
         Sentence sentence = new Sentence(seq, text, isFirst, isLast);
         sentence.setProcessingTime(processingTime); // 记录处理时间
-
+        sentence.setDialogueId(dialogueId); // 设置对话ID
         // 添加到句子队列
         CopyOnWriteArrayList<Sentence> queue = sentenceQueue.get(sessionId);
         queue.add(sentence);
@@ -313,14 +321,15 @@ public class SentenceAudioService {
             String sessionId,
             String text,
             SysConfig ttsConfig,
-            String voiceName) {
+            String voiceName,
+            String dialogueId) {
 
         
         // 设置会话为非监听状态，防止处理自己的声音
         sessionManager.setListeningState(sessionId, false);
         
         // 使用handleSentence处理单个消息
-        handleSentence(session, sessionId, text, true, true, ttsConfig, voiceName);
+        handleSentence(session, sessionId, text, true, true, ttsConfig, voiceName,dialogueId);
         
         // 等待处理完成
         return Mono.fromRunnable(() -> {

@@ -359,14 +359,14 @@ public class DialogueService {
                                                 // 提交评分
                                                 boolean lastWord = forgetService.submitWordVoice(account, data, "wav");
                                                 // 如果是当前任务的最后单词,则鼓励用户
-                                                reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig, lastWord)
+                                                reviewDialogueService.processNextWord(session,sessionId, device,ttsConfig, dialogueId,lastWord)
                                                         .subscribe();
                                             });
                                             return; // 不再执行后续的大模型调用
                                         }
                                         else if (reviewDialogueService.isInErrorReviewMode(sessionId)) {
                                             logger.info("检测在错误模式复习中");
-                                            CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig).subscribe());
+                                            CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig,dialogueId).subscribe());
                                             return;
                                         }
                                         // 判断是否需要进入复习模式
@@ -374,7 +374,7 @@ public class DialogueService {
                                             logger.info("检测到学习意图，启动复习模式而不是调用大模型");
                                             // 异步启动复习模式，避免阻塞当前线程
                                             CompletableFuture.runAsync(() -> {
-                                                reviewDialogueService.tryEnterReviewMode(session,sessionId, finalText, device,ttsConfig)
+                                                reviewDialogueService.tryEnterReviewMode(session,sessionId, finalText, device,ttsConfig,dialogueId)
                                                         .subscribe();
                                             });
                                             return; // 不再执行后续的大模型调用
@@ -642,7 +642,7 @@ public class DialogueService {
                                         isFirst,
                                         isLast,
                                         ttsConfig,
-                                        device.getVoiceName());
+                                        device.getVoiceName(),dialogueId);
                             });
                 }).then());
     }
@@ -696,7 +696,7 @@ public class DialogueService {
     /**
      * 退出复习模式
      */
-    public Mono<Void> exitReviewMode(WebSocketSession session) {
-        return reviewDialogueService.exitReviewMode(session);
-    }
+//    public Mono<Void> exitReviewMode(WebSocketSession session) {
+//        return reviewDialogueService.exitReviewMode(session);
+//    }
 }
