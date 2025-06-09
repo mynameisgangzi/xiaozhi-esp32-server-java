@@ -327,7 +327,7 @@ public class ReviewDialogueService {
     public Mono<Void> checkErrorWords(Long calenderId, WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig,String dialogueId) {
         // 错误单词列表
         List<WordDTO> errorList = forgetService.checkErrorWordList(account, calenderId);
-        logger.info("发音错误的单词有{0}个",errorList.size());
+        logger.info("发音错误的单词有{}个",errorList.size());
         if (CollUtil.isEmpty(errorList)) {
             // 没有错误单词
             sentenceAudioService.sendSingleMessage(
@@ -353,7 +353,7 @@ public class ReviewDialogueService {
         // 获取第一个错误单词发送给用户学习
         List<WordDTO> list = errorWordMap.get(sessionId);
         if (CollUtil.isEmpty(list)) {
-            reviewService.exitErrorReviewMode(sessionId);
+            return exitErrorReviewMode(session, dialogueId);
         }
 //        String messageContent = "你有" + list.size() + "个单词复习错误!";
 //        sentenceAudioService.sendSingleMessage(
