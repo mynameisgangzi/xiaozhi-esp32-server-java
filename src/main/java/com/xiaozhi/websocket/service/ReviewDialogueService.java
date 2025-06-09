@@ -363,8 +363,8 @@ public class ReviewDialogueService {
 //                ttsConfig,
 //                device.getVoiceName()).subscribe();
         WordDTO word = list.get(0);
+        String message = "你有"+list.size()+"个单词需要加强，我们再复习一遍，第一个是：" + word.getWord() + "，"+word.getParaphrase()+",请跟着我练习";
         list.remove(word);
-        String message = "你有"+list.size()+"个单词发音不正确，我们再复习一遍，第一个是：" + word.getWord() + "，"+word.getParaphrase()+",请跟着我练习";
 //        llmManager.chatStreamBySentence(device, message, true,
 //                (sentence, isFirst, isLast) -> {
 //                    sentenceAudioService.handleSentence(
