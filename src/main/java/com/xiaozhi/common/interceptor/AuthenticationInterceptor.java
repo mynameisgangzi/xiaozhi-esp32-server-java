@@ -38,6 +38,7 @@ public class AuthenticationInterceptor implements WebFilter {
     private static final List<String> PUBLIC_PATHS = Arrays.asList(
             "/api/user/",
             "/api/device/ota",
+            "/api/device/addDevice",
             "/audio/",
             "/avatar/",
             "/ws/");
