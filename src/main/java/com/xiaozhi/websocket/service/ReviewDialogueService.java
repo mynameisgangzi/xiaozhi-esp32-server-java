@@ -5,6 +5,7 @@ import cn.hutool.core.lang.Pair;
 import cn.hutool.core.util.StrUtil;
 import com.xiaozhi.entity.SysConfig;
 import com.xiaozhi.entity.SysDevice;
+import com.xiaozhi.entity.dto.UserDTO;
 import com.xiaozhi.entity.dto.WordDTO;
 import com.xiaozhi.service.ForgetService;
 import com.xiaozhi.service.ReviewService;
@@ -110,8 +111,10 @@ public class ReviewDialogueService {
             return forgetService.checkForgetTask(studentAccount);
         }).subscribeOn(Schedulers.boundedElastic())
             .flatMap(taskNumber -> Mono.defer(() -> {
+                UserDTO user = forgetService.getUser(studentAccount);
+                String username = user.getUsername();
                 if (taskNumber == 0) {
-                    String noTaskMessage = "今天没有复习任务";
+                    String noTaskMessage = username + "同学,你今天暂时还没有复习任务噢,快去学单词吧!";
                     logger.info("device.getVoiceName()=={}",device.getVoiceName());
                     return sentenceAudioService.sendSingleMessage(
                                     session,
@@ -125,7 +128,7 @@ public class ReviewDialogueService {
                 // 设置为复习模式
                 logger.info("设置为复习模式");
                 reviewService.setReviewMode(sessionId, studentAccount);
-                String taskInfo = String.format("今天有%d个任务待复习,我们现在开始复习吧", taskNumber);
+                String taskInfo = String.format("%s同学,检测到你今天有%d个任务待复习,我们现在开始复习吧!", username, taskNumber);
                 // 使用SentenceAudioService发送复习模式开始提示
                 logger.info("发送复习模式开始提示");
                 return sentenceAudioService.sendSingleMessage(
@@ -167,7 +170,9 @@ public class ReviewDialogueService {
         // 获取TTS配置
         final SysConfig ttsConfig = device.getTtsId() != null ? 
             sessionManager.getCachedConfig(device.getTtsId()) : null;
-        
+
+        String username = forgetService.getUser(studentAccount).getUsername();
+
         // 获取当前复习项
         return Mono.fromCallable(() -> {
             // 获取下一个单词
@@ -244,7 +249,7 @@ public class ReviewDialogueService {
         // 获取TTS配置
         final SysConfig ttsConfig = device.getTtsId() != null ? 
             sessionManager.getCachedConfig(device.getTtsId()) : null;
-        
+
         String message = "已退出复习模式，你可以继续与我对话。";
         // 使用SentenceAudioService发送退出消息
         return sentenceAudioService.sendSingleMessage(
@@ -283,7 +288,6 @@ public class ReviewDialogueService {
     public Mono<Void> processNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig,String dialogueId, boolean isNewTask) {
 
         String studentAccount = device.getStudentAccount();
-
         if (isNewTask) {
             // 上一个任务已完成,鼓励用户
             Pair<Integer, Integer> taskInfo = forgetService.getTaskNumber(studentAccount);
@@ -306,7 +310,7 @@ public class ReviewDialogueService {
         .flatMap(nextWord -> {
             if (StrUtil.isBlank(nextWord.getWord())) {
                 // 所有单词都已复习完
-                String completionMessage = "恭喜你完成了所有单词的复习！你太棒了！";
+                String completionMessage = "恭喜你完成了所有单词的复习!你太棒了!快去学习新的单词吧!";
 
                 // 使用SentenceAudioService发送完成消息
                 return sentenceAudioService.sendSingleMessage(
@@ -340,6 +344,12 @@ public class ReviewDialogueService {
 
     public Mono<Void> checkErrorWords(Long calenderId, WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig,String dialogueId) {
         // 错误单词列表
+        sentenceAudioService.sendSingleMessage(
+                session,
+                session.getId(),
+                "正在努力为你检测复习单词的发音技巧，请稍等...",
+                ttsConfig,
+                device.getVoiceName(),dialogueId);
         List<WordDTO> errorList = forgetService.checkErrorWordList(account, calenderId);
         logger.info("发音错误的单词有{}个",errorList.size());
         if (CollUtil.isEmpty(errorList)) {
@@ -347,7 +357,7 @@ public class ReviewDialogueService {
             sentenceAudioService.sendSingleMessage(
                     session,
                     session.getId(),
-                    "你的发音全部正确，太棒了！",
+                    "检测到你的发音全部正确，太棒了！",
                     ttsConfig,
                     device.getVoiceName(),dialogueId);
             return exitReviewMode(session,dialogueId);
@@ -377,7 +387,7 @@ public class ReviewDialogueService {
 //                ttsConfig,
 //                device.getVoiceName()).subscribe();
         WordDTO word = list.get(0);
-        String message = "你有"+list.size()+"个单词需要加强，我们再复习一遍，第一个是：" + word.getWord() + "，"+word.getParaphrase()+",请跟着我练习";
+        String message = "检测到刚刚的复习中你有"+list.size()+"个单词需要加强，我们再复习一遍，第一个是：" + word.getWord() + "，"+word.getParaphrase()+",请跟着我练习";
         list.remove(word);
 //        llmManager.chatStreamBySentence(device, message, true,
 //                (sentence, isFirst, isLast) -> {
