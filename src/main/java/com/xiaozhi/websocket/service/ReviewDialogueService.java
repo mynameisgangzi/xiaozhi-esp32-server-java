@@ -111,10 +111,8 @@ public class ReviewDialogueService {
             return forgetService.checkForgetTask(studentAccount);
         }).subscribeOn(Schedulers.boundedElastic())
             .flatMap(taskNumber -> Mono.defer(() -> {
-                UserDTO user = forgetService.getUser(studentAccount);
-                String username = user.getUsername();
                 if (taskNumber == 0) {
-                    String noTaskMessage = username + "同学,你今天暂时还没有复习任务噢,快去学单词吧!";
+                    String noTaskMessage = "你今天暂时还没有复习任务噢,快去学单词吧!";
                     logger.info("device.getVoiceName()=={}",device.getVoiceName());
                     return sentenceAudioService.sendSingleMessage(
                                     session,
@@ -128,7 +126,7 @@ public class ReviewDialogueService {
                 // 设置为复习模式
                 logger.info("设置为复习模式");
                 reviewService.setReviewMode(sessionId, studentAccount);
-                String taskInfo = String.format("%s同学,检测到你今天有%d个任务待复习,我们现在开始复习吧!", username, taskNumber);
+                String taskInfo = String.format("检测到你今天有%d个任务待复习,我们现在开始复习吧!", taskNumber);
                 // 使用SentenceAudioService发送复习模式开始提示
                 logger.info("发送复习模式开始提示");
                 return sentenceAudioService.sendSingleMessage(
