@@ -347,9 +347,14 @@ public class DialogueService {
                                     .then(audioService.sendStart(session))
                                     .then(Mono.fromRunnable(() -> {
                                         // TODO 在这里判断是否进入复习模式，如果是复习模式，则不需要调用大模型
-
+                                        // 是否有退出的意图
+                                        boolean exit = reviewDialogueService.containsExistIntent(finalText);
                                         // 先检查是否已经在复习模式中
                                         if (reviewDialogueService.isInReviewMode(sessionId)) {
+                                            if (exit) {
+                                                reviewDialogueService.exitReviewMode(session, dialogueId);
+                                                return;
+                                            }
                                             logger.info("用户已在复习模式中，发送下一个单词");
                                             // 异步处理下一个单词，避免阻塞当前线程
                                             CompletableFuture.runAsync(() -> {
@@ -365,6 +370,10 @@ public class DialogueService {
                                             return; // 不再执行后续的大模型调用
                                         }
                                         else if (reviewDialogueService.isInErrorReviewMode(sessionId)) {
+                                            if  (exit) {
+                                                reviewDialogueService.exitErrorReviewMode(session, dialogueId);
+                                                return;
+                                            }
                                             logger.info("检测在巩固错误单词模式复习中");
                                             CompletableFuture.runAsync(() -> reviewDialogueService.processErrorNextWord(session, sessionId, device, ttsConfig,dialogueId).subscribe());
                                             return;
