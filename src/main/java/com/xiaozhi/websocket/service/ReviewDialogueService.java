@@ -106,6 +106,7 @@ public class ReviewDialogueService {
                                     noTaskMessage,
                                     ttsConfig,
                                     device.getVoiceName(),dialogueId)
+                            .then(exitReviewMode(session, dialogueId))
                             .thenReturn(false);
                 }
                 // 设置为复习模式
