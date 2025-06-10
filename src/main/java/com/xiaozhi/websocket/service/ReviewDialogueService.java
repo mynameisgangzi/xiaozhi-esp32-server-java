@@ -39,7 +39,11 @@ public class ReviewDialogueService {
     
     // 学习相关意图的正则表达式
     private static final Pattern LEARN_INTENT_PATTERN = Pattern.compile(
-            ".*?(抗遗忘|学习|复习|练习|单词|英语|).*?",
+            ".*?(抗遗忘|学习|复习|练习|单词|英语).*?",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    private static final Pattern EXIST_PATTERN = Pattern.compile(
+            ".*?(结束|退出|不想学).*?",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Autowired
@@ -69,6 +73,15 @@ public class ReviewDialogueService {
      */
     public boolean containsLearningIntent(String text) {
         return LEARN_INTENT_PATTERN.matcher(text).matches();
+    }
+
+    /**
+     * 检查是否包含退出意图
+     * @param text 识别的文本
+     * @return 是否包含退出意图
+     */
+    public boolean containsExistIntent(String text) {
+        return EXIST_PATTERN.matcher(text).matches();
     }
 
     /**
