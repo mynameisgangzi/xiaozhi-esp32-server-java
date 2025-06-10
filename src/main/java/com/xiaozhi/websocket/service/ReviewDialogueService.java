@@ -39,7 +39,7 @@ public class ReviewDialogueService {
     
     // 学习相关意图的正则表达式
     private static final Pattern LEARN_INTENT_PATTERN = Pattern.compile(
-            ".*?(抗遗忘|学习|复习|练习|单词|英语|).*?",
+            ".*?(抗遗忘|学习|复习|练习|单词|英语).*?",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Autowired
