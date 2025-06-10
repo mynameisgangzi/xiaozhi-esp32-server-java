@@ -389,7 +389,7 @@ public class ReviewDialogueService {
     public Mono<Void> processErrorNextWord(WebSocketSession session, String sessionId,SysDevice device,SysConfig ttsConfig,String dialogueId) {
         List<WordDTO> list = errorWordMap.get(sessionId);
         if (CollUtil.isEmpty(list)) {
-            reviewService.exitErrorReviewMode(sessionId);
+            return exitErrorReviewMode(session, dialogueId);
         }
         WordDTO word = list.get(0);
         list.remove(word);
