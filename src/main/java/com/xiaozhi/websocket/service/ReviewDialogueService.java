@@ -308,7 +308,7 @@ public class ReviewDialogueService {
         .flatMap(nextWord -> {
             if (StrUtil.isBlank(nextWord.getWord())) {
                 // 所有单词都已复习完
-                String completionMessage = "恭喜你完成了所有单词的复习!你太棒了!快去学习新的单词吧!";
+                String completionMessage = "恭喜你完成了所有单词的复习!让我来看看你的发音怎么样吧!";
 
                 // 使用SentenceAudioService发送完成消息
                 return sentenceAudioService.sendSingleMessage(
@@ -342,12 +342,12 @@ public class ReviewDialogueService {
 
     public Mono<Void> checkErrorWords(Long calenderId, WebSocketSession session, String account, SysDevice device,SysConfig ttsConfig,String dialogueId) {
         // 错误单词列表
-        sentenceAudioService.sendSingleMessage(
-                session,
-                session.getId(),
-                "正在努力为你检测复习单词的发音技巧，请稍等...",
-                ttsConfig,
-                device.getVoiceName(),dialogueId);
+//        sentenceAudioService.sendSingleMessage(
+//                session,
+//                session.getId(),
+//                "正在努力为你检测复习单词的发音技巧，请稍等...",
+//                ttsConfig,
+//                device.getVoiceName(),dialogueId);
         List<WordDTO> errorList = forgetService.checkErrorWordList(account, calenderId);
         logger.info("发音错误的单词有{}个",errorList.size());
         if (CollUtil.isEmpty(errorList)) {
@@ -355,7 +355,7 @@ public class ReviewDialogueService {
             sentenceAudioService.sendSingleMessage(
                     session,
                     session.getId(),
-                    "检测到你的发音全部正确，太棒了！",
+                    "你的发音全部正确，你今天的表现太棒了！",
                     ttsConfig,
                     device.getVoiceName(),dialogueId);
             return exitReviewMode(session,dialogueId);
@@ -385,7 +385,7 @@ public class ReviewDialogueService {
 //                ttsConfig,
 //                device.getVoiceName()).subscribe();
         WordDTO word = list.get(0);
-        String message = "检测到刚刚的复习中你有"+list.size()+"个单词需要加强，我们再复习一遍，第一个是：" + word.getWord() + "，"+word.getParaphrase()+",请跟着我练习";
+        String message = "检测到刚刚的复习中你有"+list.size()+"个单词需要加强，我们再复习一遍：" + word.getWord() + "，"+word.getParaphrase();
         list.remove(word);
 //        llmManager.chatStreamBySentence(device, message, true,
 //                (sentence, isFirst, isLast) -> {
