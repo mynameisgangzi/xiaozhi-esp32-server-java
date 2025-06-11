@@ -186,8 +186,7 @@ public class ReviewDialogueService {
                 return Mono.empty();
             }
             String word = nextWord.getWord();
-            String promptMessage = "第一个单词是：" + word +
-                    "，"+nextWord.getParaphrase()+",请读出这个单词和它的中文意思。";
+            String promptMessage = "第一个单词是：" + word + ",请读出这个单词和它的中文意思。";
             logger.info("生成第一个单词提示：{}", promptMessage);
 
             // 使用SentenceAudioService处理音频生成和发送
@@ -324,17 +323,12 @@ public class ReviewDialogueService {
             // 提示下一个单词
             String word = nextWord.getWord();
 
-            StringBuilder prompt = new StringBuilder();
-            prompt.append(word);
-            prompt.append(",");
-            prompt.append(nextWord.getParaphrase());
-            String promptMessage = prompt.toString();
-            logger.info("生成下一个单词提示：{}", promptMessage);
+            logger.info("生成下一个单词提示：{}", word);
             // 使用SentenceAudioService发送下一个单词提示
             return sentenceAudioService.sendSingleMessage(
                     session,
                     sessionId,
-                    promptMessage,
+                    word,
                     ttsConfig,
                     device.getVoiceName(),dialogueId);
         });
@@ -385,7 +379,7 @@ public class ReviewDialogueService {
 //                ttsConfig,
 //                device.getVoiceName()).subscribe();
         WordDTO word = list.get(0);
-        String message = "检测到刚刚的复习中你有"+list.size()+"个单词需要加强，我们再复习一遍：" + word.getWord() + "，"+word.getParaphrase();
+        String message = "检测到刚刚的复习中你有"+list.size()+"个单词需要加强，我们再复习一遍：" + word.getWord();
         list.remove(word);
 //        llmManager.chatStreamBySentence(device, message, true,
 //                (sentence, isFirst, isLast) -> {
@@ -415,7 +409,7 @@ public class ReviewDialogueService {
         }
         WordDTO word = list.get(0);
         list.remove(word);
-        String message = word.getWord()+","+word.getParaphrase();
+        String message = word.getWord();
         return sentenceAudioService.sendSingleMessage(
                 session,
                 session.getId(),
