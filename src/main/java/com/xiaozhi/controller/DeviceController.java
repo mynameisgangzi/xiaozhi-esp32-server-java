@@ -26,10 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.io.buffer.DataBufferUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ServerWebExchange;
 
 import reactor.core.publisher.Mono;
@@ -207,38 +204,35 @@ public class DeviceController {
     }
 
     @PostMapping("/addDevice")
-    public Mono<AjaxResult> addDevice(ServerWebExchange exchange) {
-        return exchange.getFormData()
-                .flatMap(formData -> {
-                    String deviceMac = formData.getFirst("deviceId");
-                    String account = formData.getFirst("account");
-                    String username = formData.getFirst("username");
-                    return Mono.fromCallable(() -> {
-                        try {
-                            SysDevice device = new SysDevice();
-                            device.setDeviceId(deviceMac);
-                            device.setDeviceName(account + "_" + deviceMac);
-                            // 设置用户信息
-                            device.setUsername(username);
-                            device.setStudentAccount(account);
-                            device.setUserId(1);
-                            int row = deviceService.add(device);
-                            if (row > 0) {
-                                String deviceId = device.getDeviceId();
-                                String sessionId = sessionManager.getSessionByDeviceId(deviceId);
-                                if (sessionId != null) {
-                                    sessionManager.closeSession(sessionId);
-                                }
-                                return AjaxResult.success();
-                            } else {
-                                return AjaxResult.error();
-                            }
-                        } catch (Exception e) {
-                            logger.error(e.getMessage(), e);
-                            return AjaxResult.error();
-                        }
-                    });
-                });
+    public Mono<AjaxResult> addDevice(@RequestBody SysDevice sysDevice, ServerWebExchange exchange) {
+        try {
+            SysDevice device = new SysDevice();
+            device.setDeviceId(sysDevice.getDeviceId());
+            device.setDeviceName(sysDevice.getStudentAccount() + "_" + sysDevice.getDeviceId());
+            // 设置用户信息
+            device.setUsername(sysDevice.getUsername());
+            device.setStudentAccount(sysDevice.getStudentAccount());
+            device.setUserId(1);
+            // 查询设备是否已绑定
+            SysDevice oldDevice = deviceService.selectDeviceById(device.getDeviceId());
+            if (oldDevice != null) {
+                return Mono.just(AjaxResult.error("设备已存在,请勿重复绑定"));
+            }
+
+            int row = deviceService.add(device);
+            if (row > 0) {
+                String sessionId = sessionManager.getSessionByDeviceId(sysDevice.getDeviceId());
+                if (sessionId != null) {
+                    sessionManager.closeSession(sessionId);
+                }
+                return Mono.just(AjaxResult.success());
+            } else {
+                return Mono.just(AjaxResult.error());
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+            return Mono.just(AjaxResult.error());
+        }
     }
 
     /**

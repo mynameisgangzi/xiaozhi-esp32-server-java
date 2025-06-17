@@ -172,11 +172,12 @@ public class ForgetHttp {
             post.form("taskId", word.getTaskId());
             post.form("vocabularyId", word.getVocabularyId());
             post.form("word", word.getWord());
-            post.form("wordChoose", word.getParaphrase());
+//            post.form("wordChoose", word.getParaphrase());
             post.form("lastWord", word.getLastWord());
             post.form("paraphrase", word.getParaphrase());
             // 默认测评格式为wav格式
             post.form("fileType", "raw");
+            post.form("deviceFlag", true);
             HttpResponse response = post.execute();
             String body = response.body();
             log.info("用户:{}, 提交发音评分完成,结果:{}", account, body);
