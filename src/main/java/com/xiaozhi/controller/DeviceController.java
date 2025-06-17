@@ -369,7 +369,7 @@ public class DeviceController {
                                     firmwareData.put("version", "1.0.0");
 
                                     // 获取服务器IP和端口
-                                    String serverIp = CmsUtils.getServerIp();
+                                    String serverIp = environment.getProperty("server.url");
                                     String portStr = environment.getProperty("server.port");
                                     int port = Integer.parseInt(portStr);
 
