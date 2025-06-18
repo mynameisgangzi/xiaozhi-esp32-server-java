@@ -213,6 +213,7 @@ public class DeviceController {
             device.setUsername(sysDevice.getUsername());
             device.setStudentAccount(sysDevice.getStudentAccount());
             device.setUserId(1);
+            device.setState("1");// 已激活状态
             // 查询设备是否已绑定
             SysDevice oldDevice = deviceService.selectDeviceById(device.getDeviceId());
             if (oldDevice != null) {
@@ -338,7 +339,7 @@ public class DeviceController {
                         final String deviceId = deviceIdAuth;
                         device.setDeviceId(deviceId);
                         device.setLastLogin(new Date().toString());
-                        
+                        logger.debug("设备ID：{}",deviceId);
                         // 设置设备IP地址（如果JSON中没有获取到）
                         if (device.getIp() == null) {
                             String remoteAddress = exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
@@ -346,7 +347,7 @@ public class DeviceController {
                         }
 
                         // 查询设备是否已绑定
-                        return Mono.fromCallable(() -> deviceService.query(device))
+                        return Mono.fromCallable(() -> deviceService.selectDeviceById(deviceId))
                                 .flatMap(queryDevice -> {
                                     Map<String, Object> responseData = new java.util.HashMap<>();
                                     Map<String, Object> firmwareData = new java.util.HashMap<>();
@@ -373,7 +374,7 @@ public class DeviceController {
                                     websocketData.put("token", "");
                                     
                                     // 检查设备是否已绑定
-                                    if (ObjectUtils.isEmpty(queryDevice)) {
+                                    if (queryDevice == null) {
                                         // 设备未绑定，生成验证码
                                         try {
                                             SysDevice codeResult = deviceService.generateCode(device);
@@ -389,7 +390,7 @@ public class DeviceController {
                                         }
                                     } else {
                                         // 设备已绑定，更新设备状态和信息
-                                        SysDevice boundDevice = queryDevice.get(0);
+                                        SysDevice boundDevice = queryDevice;
                                         
                                         // 保留原设备名称，更新其他信息
                                         device.setDeviceName(boundDevice.getDeviceName());
